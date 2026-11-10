@@ -77,7 +77,4 @@ lib/
 - **Reserva de emergência**: meta de 3 a 12 meses de gastos essenciais
 - **Importar fatura (PDF)**: selecione o PDF da fatura do cartão, o app extrai os lançamentos e você categoriza cada um antes de salvar
 
-> **Licença Syncfusion**: o pacote `syncfusion_flutter_pdf` exige uma licença. Para uso individual ou pequenas empresas (< US$ 1 mi/ano), a [Community License](https://www.syncfusion.com/products/communitylicense) é gratuita. Registre-se e adicione a chave em `main.dart`:
-> ```dart
-> SyncfusionLicense.registerLicense('SUA_CHAVE');
-> ```
+> **Licença Syncfusion**: o pacote `syncfusion_flutter_pdf` exige uma licença Syncfusion válida (Community ou comercial). A partir da versão 18.3, não é necessário registrar a chave no código — basta possuir uma licença ativa. Saiba mais em [syncfusion.com/products/communitylicense](https://www.syncfusion.com/products/communitylicense).
