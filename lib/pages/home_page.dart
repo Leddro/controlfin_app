@@ -3,19 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/tx.dart';
+import '../models/user_settings.dart';
 import '../services/auth_service.dart';
+import '../services/settings_service.dart';
 import '../services/tx_service.dart';
+import '../widgets/goals_card.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   final _service = TxService();
+  final _settingsService = SettingsService();
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   int? _touched;
 
@@ -41,45 +46,64 @@ class _HomePageState extends State<HomePage> {
         icon: const Icon(Icons.add),
         label: const Text('Adicionar'),
       ),
-      body: StreamBuilder<List<Tx>>(
-        stream: _service.watchMonth(_month),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(
-                child: Text('Não foi possível carregar seus lançamentos.'));
-          }
-          if (!snap.hasData)
-            return const Center(child: CircularProgressIndicator());
-          final txs = snap.data!;
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                children: [
-                  _monthSelector(),
-                  const SizedBox(height: 8),
-                  _summary(txs),
-                  const SizedBox(height: 24),
-                  if (txs.isEmpty)
-                    _empty()
-                  else ...[
-                    _breakdown(txs),
-                    const SizedBox(height: 24),
-                    _list(txs),
-                  ],
-                ],
-              ),
-            ),
+      body: StreamBuilder<UserSettings>(
+        stream: _settingsService.watch(),
+        builder: (context, settingsSnap) {
+          final settings = settingsSnap.data ?? const UserSettings();
+          return StreamBuilder<List<Tx>>(
+            stream: _service.watchMonth(_month),
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return const Center(
+                    child: Text('Não foi possível carregar seus lançamentos.'));
+              }
+              if (!snap.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final txs = snap.data!;
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                    children: [
+                      _monthSelector(),
+                      const SizedBox(height: 8),
+                      _summary(txs),
+                      const SizedBox(height: 16),
+                      GoalsCard(
+                        settings: settings,
+                        txs: txs,
+                        onEdit: () => _editGoals(settings),
+                      ),
+                      const SizedBox(height: 16),
+                      if (txs.isEmpty)
+                        _empty()
+                      else ...[
+                        _breakdown(txs),
+                        const SizedBox(height: 24),
+                        _list(txs),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
+  Future<void> _editGoals(UserSettings current) async {
+    final result =
+        await showGoalsDialog(context, current, _service.averageIncome);
+    if (result != null) await _settingsService.save(result);
+  }
+
   Widget _monthSelector() {
     final label = toBeginningOfSentenceCase(
-        DateFormat('MMMM yyyy', 'pt_BR').format(_month))!;
+        DateFormat('MMMM yyyy', 'pt_BR').format(_month));
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -225,8 +249,17 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  String _subtitle(Tx t) {
+    final date = DateFormat("dd 'de' MMM", 'pt_BR').format(t.date);
+    final extra = switch (t.kind) {
+      TxKind.installment => ' • Parcela ${t.index}/${t.count}',
+      TxKind.recurring => ' • Mensal',
+      TxKind.single => '',
+    };
+    return '${t.category} • $date$extra';
+  }
+
   Widget _list(List<Tx> txs) {
-    final df = DateFormat("dd 'de' MMM", 'pt_BR');
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Lançamentos',
           style: Theme.of(context)
@@ -244,10 +277,10 @@ class _HomePageState extends State<HomePage> {
             color: Colors.red.shade100,
             child: const Icon(Icons.delete_outline_rounded),
           ),
-          onDismissed: (_) {
-            _service.delete(t.id!);
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Lançamento excluído.')));
+          // A exclusão é feita aqui; o item some quando o Firestore atualiza a lista.
+          confirmDismiss: (_) async {
+            await _confirmDelete(t);
+            return false;
           },
           child: ListTile(
             contentPadding: EdgeInsets.zero,
@@ -258,7 +291,7 @@ class _HomePageState extends State<HomePage> {
                   color: categoryOf(t.type, t.category).color, size: 20),
             ),
             title: Text(t.description.isEmpty ? t.category : t.description),
-            subtitle: Text('${t.category} • ${df.format(t.date)}'),
+            subtitle: Text(_subtitle(t)),
             trailing: Text(
               '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
               style: TextStyle(
@@ -273,8 +306,39 @@ class _HomePageState extends State<HomePage> {
     ]);
   }
 
+  Future<void> _confirmDelete(Tx t) async {
+    if (t.groupId == null) {
+      await _service.deleteOne(t.id!);
+      return;
+    }
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Excluir lançamento'),
+        content: Text(t.kind == TxKind.installment
+            ? 'Esta é a parcela ${t.index} de ${t.count}.'
+            : 'Este lançamento se repete todo mês.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'one'),
+              child: const Text('Só este')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'next'),
+              child: const Text('Este e os próximos')),
+        ],
+      ),
+    );
+
+    if (choice == 'one') await _service.deleteOne(t.id!);
+    if (choice == 'next') await _service.deleteGroupFrom(t.groupId!, t.date);
+  }
+
   Widget _empty() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 64),
+        padding: const EdgeInsets.symmetric(vertical: 48),
         child: Column(children: [
           const Icon(Icons.receipt_long_rounded, size: 48),
           const SizedBox(height: 12),
@@ -289,17 +353,17 @@ class _HomePageState extends State<HomePage> {
       txs.where((t) => t.type == type).fold(0.0, (s, t) => s + t.amount);
 
   Future<void> _openForm(BuildContext context) async {
-    final tx = await showModalBottomSheet<Tx>(
+    final now = DateTime.now();
+    final sameMonth = _month.month == now.month && _month.year == now.year;
+    final list = await showModalBottomSheet<List<Tx>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => _TxForm(
-          initialDate: _month.month == DateTime.now().month &&
-                  _month.year == DateTime.now().year
-              ? DateTime.now()
-              : _month),
+          initialDate:
+              sameMonth ? DateTime(now.year, now.month, now.day) : _month),
     );
-    if (tx != null) await _service.add(tx);
+    if (list != null) await _service.addAll(list);
   }
 }
 
@@ -311,9 +375,14 @@ class _TxForm extends StatefulWidget {
 }
 
 class _TxFormState extends State<_TxForm> {
+  static const _recurringOptions = [6, 12, 24, 36];
+  static const _installmentOptions = [2, 3, 4, 5, 6, 10, 12, 18, 24];
+
   final _amount = TextEditingController();
   final _desc = TextEditingController();
   TxType _type = TxType.expense;
+  TxKind _kind = TxKind.single;
+  int _count = 12;
   String _category = 'Outros';
   bool _manualCategory = false;
   late DateTime _date = widget.initialDate;
@@ -322,26 +391,51 @@ class _TxFormState extends State<_TxForm> {
   List<Category> get _cats =>
       _type == TxType.expense ? expenseCategories : incomeCategories;
 
+  @override
+  void dispose() {
+    _amount.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
   void _save() {
-    final value =
-        double.tryParse(_amount.text.replaceAll('.', '').replaceAll(',', '.'));
+    final value = parseMoney(_amount.text);
     if (value == null || value <= 0) {
       setState(() => _error = 'Informe um valor maior que zero.');
       return;
     }
     Navigator.pop(
       context,
-      Tx(
-          type: _type,
-          amount: value,
-          category: _category,
-          description: _desc.text.trim(),
-          date: _date),
+      buildSeries(
+        type: _type,
+        amount: value,
+        category: _category,
+        description: _desc.text.trim(),
+        start: DateTime(_date.year, _date.month, _date.day),
+        kind: _kind,
+        count: _count,
+      ),
     );
+  }
+
+  String? _preview() {
+    final value = parseMoney(_amount.text);
+    if (_kind == TxKind.installment) {
+      if (value == null || value <= 0) return null;
+      return '${_count}x de ${_money.format(value / _count)} (total ${_money.format(value)})';
+    }
+    if (_kind == TxKind.recurring) {
+      return 'Será lançado todo mês, por $_count meses, a partir de ${DateFormat('dd/MM/yyyy').format(_date)}.';
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final preview = _preview();
+    final options =
+        _kind == TxKind.installment ? _installmentOptions : _recurringOptions;
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -358,6 +452,9 @@ class _TxFormState extends State<_TxForm> {
               _type = s.first;
               _category = 'Outros';
               _manualCategory = false;
+              if (_type == TxType.income && _kind == TxKind.installment) {
+                _kind = TxKind.single;
+              }
               final sug = suggestCategory(_type, _desc.text);
               if (sug != null) _category = sug.name;
             }),
@@ -367,10 +464,14 @@ class _TxFormState extends State<_TxForm> {
             controller: _amount,
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Valor',
-                prefixText: r'R$ ',
-                border: OutlineInputBorder()),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: _kind == TxKind.installment
+                  ? 'Valor total da compra'
+                  : 'Valor',
+              prefixText: r'R$ ',
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -398,10 +499,50 @@ class _TxFormState extends State<_TxForm> {
                 }),
               ),
           ]),
+          const SizedBox(height: 16),
+          SegmentedButton<TxKind>(
+            segments: [
+              const ButtonSegment(value: TxKind.single, label: Text('Única')),
+              const ButtonSegment(
+                  value: TxKind.recurring, label: Text('Todo mês')),
+              if (_type == TxType.expense)
+                const ButtonSegment(
+                    value: TxKind.installment, label: Text('Parcelada')),
+            ],
+            selected: {_kind},
+            onSelectionChanged: (s) => setState(() {
+              _kind = s.first;
+              _count = _kind == TxKind.installment ? 3 : 12;
+            }),
+          ),
+          if (_kind != TxKind.single) ...[
+            const SizedBox(height: 12),
+            Text(
+                _kind == TxKind.installment
+                    ? 'Número de parcelas'
+                    : 'Repetir por',
+                style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final n in options)
+                ChoiceChip(
+                  label:
+                      Text(_kind == TxKind.installment ? '${n}x' : '$n meses'),
+                  selected: _count == n,
+                  onSelected: (_) => setState(() => _count = n),
+                ),
+            ]),
+            if (preview != null) ...[
+              const SizedBox(height: 8),
+              Text(preview, style: theme.textTheme.bodyMedium),
+            ],
+          ],
           const SizedBox(height: 12),
           OutlinedButton.icon(
             icon: const Icon(Icons.calendar_today_rounded, size: 18),
-            label: Text(DateFormat('dd/MM/yyyy').format(_date)),
+            label: Text(_kind == TxKind.single
+                ? DateFormat('dd/MM/yyyy').format(_date)
+                : 'Primeiro lançamento: ${DateFormat('dd/MM/yyyy').format(_date)}'),
             onPressed: () async {
               final picked = await showDatePicker(
                 context: context,

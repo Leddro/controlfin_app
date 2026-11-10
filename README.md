@@ -35,7 +35,7 @@ flutter pub get
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/transactions/{doc} {
+    match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
   }
@@ -57,8 +57,11 @@ firebase deploy                # publica em https://SEU-PROJETO.web.app
 lib/
   main.dart                  # Firebase, tema, alterna login/home
   models/tx.dart             # lançamento, categorias, sugestão automática
+  models/user_settings.dart  # renda, meses de reserva, valor guardado
   services/auth_service.dart # e-mail/senha + Google
   services/tx_service.dart   # Firestore: users/{uid}/transactions
+  services/settings_service.dart # Firestore: users/{uid}/settings/profile
   pages/login_page.dart
-  pages/home_page.dart       # resumo, gráfico, categorias, lista, formulário
+  pages/home_page.dart       # resumo, metas, gráfico, categorias, lista, formulário
+  widgets/goals_card.dart    # regra 50/30/20, reserva de emergência, diálogo de metas
 ```
