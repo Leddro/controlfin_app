@@ -141,9 +141,8 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
             ),
           ]),
         ),
-        Flexible(
+        Expanded(
           child: ListView.separated(
-            shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             itemCount: _items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -153,10 +152,11 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
       ]);
     }
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.85,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Header
@@ -180,7 +180,9 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
                 ),
               ),
             ],
-          ]),
+          ],
+        ),
+      ),
     );
   }
 
