@@ -32,6 +32,8 @@ class TxService {
 
   Future<void> deleteOne(String id) => _col.doc(id).delete();
 
+  Future<void> update(Tx tx) => _col.doc(tx.id!).update(tx.toMap());
+
   /// Apaga o lançamento da data [from] e todos os seguintes da mesma série.
   Future<void> deleteGroupFrom(String groupId, DateTime from) async {
     final snap = await _col.where('groupId', isEqualTo: groupId).get();

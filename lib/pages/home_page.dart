@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import '../models/tx.dart';
 import '../models/user_settings.dart';
 import '../services/auth_service.dart';
+import '../services/csv_import_service.dart';
+import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../widgets/goals_card.dart';
@@ -33,13 +35,20 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Finanças',
+        title: const Text('ControlFin',
             style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
-          IconButton(
-            tooltip: 'Importar fatura (PDF)',
+          PopupMenuButton<String>(
+            tooltip: 'Importar',
             icon: const Icon(Icons.upload_file_rounded),
-            onPressed: () => _importPdf(context),
+            onSelected: (v) {
+              if (v == 'pdf') _importPdf(context);
+              if (v == 'csv') _importCsv(context);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'pdf', child: Text('Importar fatura (PDF)')),
+              PopupMenuItem(value: 'csv', child: Text('Importar CSV')),
+            ],
           ),
           IconButton(
             tooltip: 'Sair',
@@ -122,12 +131,48 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => PdfImportSheet(
+      builder: (_) => ImportReviewSheet(
         bytes: bytes,
         defaultDate: DateTime(_month.year, _month.month, 1),
+        parser: PdfImportService.parse,
+        title: 'Importar fatura',
       ),
     );
     if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
+  }
+
+  Future<void> _importCsv(BuildContext context) async {
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'txt'],
+    );
+    if (file == null || !context.mounted) return;
+
+    final bytes = await file.readAsBytes();
+    if (!context.mounted) return;
+
+    final txs = await showModalBottomSheet<List<Tx>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ImportReviewSheet(
+        bytes: bytes,
+        defaultDate: DateTime(_month.year, _month.month, 1),
+        parser: (b) async => CsvImportService.parse(b),
+        title: 'Importar CSV',
+      ),
+    );
+    if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
+  }
+
+  Future<void> _editTx(Tx tx) async {
+    final result = await showModalBottomSheet<Tx>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _TxForm(initialDate: tx.date, editTx: tx),
+    );
+    if (result != null) await _service.update(result);
   }
 
   Widget _monthSelector() {
@@ -176,14 +221,15 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Row(children: [
-        cell('Entradas', income, const Color(0xFF0F766E)),
-        cell('Saídas', expense, const Color(0xFFB91C1C)),
+        cell('Entradas', income, const Color(0xFF4ADE80)),
+        cell('Saídas', expense, const Color(0xFFF87171)),
         cell('Saldo', balance,
-            balance >= 0 ? const Color(0xFF14232B) : const Color(0xFFB91C1C)),
+            balance >= 0 ? Colors.white : const Color(0xFFF87171)),
       ]),
     );
   }
@@ -210,7 +256,9 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(20)),
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(headline,
             style: theme.textTheme.titleLarge
@@ -313,22 +361,33 @@ class _HomePageState extends State<HomePage> {
           },
           child: ListTile(
             contentPadding: EdgeInsets.zero,
+            onTap: () => _editTx(t),
             leading: CircleAvatar(
               backgroundColor:
-                  categoryOf(t.type, t.category).color.withValues(alpha: 0.14),
+                  categoryOf(t.type, t.category).color.withValues(alpha: 0.20),
               child: Icon(categoryOf(t.type, t.category).icon,
                   color: categoryOf(t.type, t.category).color, size: 20),
             ),
             title: Text(t.description.isEmpty ? t.category : t.description),
             subtitle: Text(_subtitle(t)),
-            trailing: Text(
-              '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: t.type == TxType.income
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFFB91C1C),
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: t.type == TxType.income
+                        ? const Color(0xFF4ADE80)
+                        : const Color(0xFFF87171),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  color: const Color(0xFFF87171),
+                  onPressed: () => _confirmDelete(t),
+                ),
+              ],
             ),
           ),
         ),
@@ -398,7 +457,8 @@ class _HomePageState extends State<HomePage> {
 
 class _TxForm extends StatefulWidget {
   final DateTime initialDate;
-  const _TxForm({required this.initialDate});
+  final Tx? editTx;
+  const _TxForm({required this.initialDate, this.editTx});
   @override
   State<_TxForm> createState() => _TxFormState();
 }
@@ -418,8 +478,23 @@ class _TxFormState extends State<_TxForm> {
   late DateTime _date = widget.initialDate;
   String? _error;
 
+  bool get _isEditing => widget.editTx != null;
+
   List<Category> get _cats =>
       _type == TxType.expense ? expenseCategories : incomeCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.editTx != null) {
+      final t = widget.editTx!;
+      _amount.text = t.amount.toStringAsFixed(2).replaceAll('.', ',');
+      _desc.text = t.description;
+      _type = t.type;
+      _category = t.category;
+      _date = t.date;
+    }
+  }
 
   @override
   void dispose() {
@@ -434,20 +509,39 @@ class _TxFormState extends State<_TxForm> {
       setState(() => _error = 'Informe um valor maior que zero.');
       return;
     }
-    Navigator.pop(
-      context,
-      buildSeries(
-        type: _type,
-        amount: value,
-        category: _category,
-        description: _desc.text.trim(),
-        start: DateTime(_date.year, _date.month, _date.day),
-        kind: _kind,
-        count: _count,
-        startIndex: _kind == TxKind.installment ? _currentIndex : 1,
-        perInstallment: _kind == TxKind.installment,
-      ),
-    );
+    if (_isEditing) {
+      final t = widget.editTx!;
+      Navigator.pop(
+        context,
+        Tx(
+          id: t.id,
+          type: _type,
+          amount: value,
+          category: _category,
+          description: _desc.text.trim(),
+          date: DateTime(_date.year, _date.month, _date.day),
+          groupId: t.groupId,
+          kind: t.kind,
+          index: t.index,
+          count: t.count,
+        ),
+      );
+    } else {
+      Navigator.pop(
+        context,
+        buildSeries(
+          type: _type,
+          amount: value,
+          category: _category,
+          description: _desc.text.trim(),
+          start: DateTime(_date.year, _date.month, _date.day),
+          kind: _kind,
+          count: _count,
+          startIndex: _kind == TxKind.installment ? _currentIndex : 1,
+          perInstallment: _kind == TxKind.installment,
+        ),
+      );
+    }
   }
 
   String? _preview() {
@@ -532,60 +626,62 @@ class _TxFormState extends State<_TxForm> {
                 }),
               ),
           ]),
-          const SizedBox(height: 16),
-          SegmentedButton<TxKind>(
-            segments: [
-              const ButtonSegment(value: TxKind.single, label: Text('Única')),
-              const ButtonSegment(
-                  value: TxKind.recurring, label: Text('Todo mês')),
-              if (_type == TxType.expense)
+          if (!_isEditing) ...[
+            const SizedBox(height: 16),
+            SegmentedButton<TxKind>(
+              segments: [
+                const ButtonSegment(value: TxKind.single, label: Text('Única')),
                 const ButtonSegment(
-                    value: TxKind.installment, label: Text('Parcelada')),
-            ],
-            selected: {_kind},
-            onSelectionChanged: (s) => setState(() {
-              _kind = s.first;
-              _count = _kind == TxKind.installment ? 3 : 12;
-              _currentIndex = 1;
-            }),
-          ),
-          if (_kind != TxKind.single) ...[
-            const SizedBox(height: 12),
-            Text(
-                _kind == TxKind.installment
-                    ? 'Número de parcelas'
-                    : 'Repetir por',
-                style: theme.textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final n in options)
-                ChoiceChip(
-                  label:
-                      Text(_kind == TxKind.installment ? '${n}x' : '$n meses'),
-                  selected: _count == n,
-                  onSelected: (_) => setState(() {
-                    _count = n;
-                    if (_currentIndex > n) _currentIndex = 1;
-                  }),
-                ),
-            ]),
-            if (_kind == TxKind.installment) ...[
+                    value: TxKind.recurring, label: Text('Todo mês')),
+                if (_type == TxType.expense)
+                  const ButtonSegment(
+                      value: TxKind.installment, label: Text('Parcelada')),
+              ],
+              selected: {_kind},
+              onSelectionChanged: (s) => setState(() {
+                _kind = s.first;
+                _count = _kind == TxKind.installment ? 3 : 12;
+                _currentIndex = 1;
+              }),
+            ),
+            if (_kind != TxKind.single) ...[
               const SizedBox(height: 12),
-              Text('Qual parcela você está?',
+              Text(
+                  _kind == TxKind.installment
+                      ? 'Número de parcelas'
+                      : 'Repetir por',
                   style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [
-                for (var i = 1; i <= _count; i++)
+                for (final n in options)
                   ChoiceChip(
-                    label: Text('$i'),
-                    selected: _currentIndex == i,
-                    onSelected: (_) => setState(() => _currentIndex = i),
+                    label: Text(
+                        _kind == TxKind.installment ? '${n}x' : '$n meses'),
+                    selected: _count == n,
+                    onSelected: (_) => setState(() {
+                      _count = n;
+                      if (_currentIndex > n) _currentIndex = 1;
+                    }),
                   ),
               ]),
-            ],
-            if (preview != null) ...[
-              const SizedBox(height: 8),
-              Text(preview, style: theme.textTheme.bodyMedium),
+              if (_kind == TxKind.installment) ...[
+                const SizedBox(height: 12),
+                Text('Qual parcela você está?',
+                    style: theme.textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (var i = 1; i <= _count; i++)
+                    ChoiceChip(
+                      label: Text('$i'),
+                      selected: _currentIndex == i,
+                      onSelected: (_) => setState(() => _currentIndex = i),
+                    ),
+                ]),
+              ],
+              if (preview != null) ...[
+                const SizedBox(height: 8),
+                Text(preview, style: theme.textTheme.bodyMedium),
+              ],
             ],
           ],
           const SizedBox(height: 12),

@@ -32,13 +32,14 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _forgot() async {
     if (_email.text.trim().isEmpty) {
-      setState(() => _error = 'Digite seu e-mail para receber o link de redefinição.');
+      setState(() =>
+          _error = 'Digite seu e-mail para receber o link de redefinição.');
       return;
     }
     await _run(() => _auth.resetPassword(_email.text));
     if (mounted && _error == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Link de redefinição enviado.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link de redefinição enviado.')));
     }
   }
 
@@ -58,57 +59,72 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Finanças',
-                    style: theme.textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
+                Text('ControlFin',
+                    style: theme.textTheme.displaySmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
-                Text('Veja para onde seu dinheiro está indo.', style: theme.textTheme.bodyLarge),
+                Text('Controle total das suas finanças.',
+                    style: theme.textTheme.bodyLarge),
                 const SizedBox(height: 32),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : () => _run(_auth.signInWithGoogle),
                   icon: const Icon(Icons.g_mobiledata_rounded, size: 32),
                   label: const Text('Continuar com Google'),
-                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52)),
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Row(children: [
                     Expanded(child: Divider()),
-                    Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('ou')),
+                    Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('ou')),
                     Expanded(child: Divider()),
                   ]),
                 ),
                 TextField(
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'E-mail', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                      labelText: 'E-mail', border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _password,
                   obscureText: true,
                   onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(labelText: 'Senha', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                      labelText: 'Senha', border: OutlineInputBorder()),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                  Text(_error!,
+                      style: TextStyle(color: theme.colorScheme.error)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _busy ? null : _submit,
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52)),
                   child: _busy
                       ? const SizedBox(
-                          height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : Text(_creating ? 'Criar conta' : 'Entrar'),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: _busy ? null : () => setState(() => _creating = !_creating),
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() => _creating = !_creating),
                   child: Text(_creating ? 'Já tenho conta' : 'Criar uma conta'),
                 ),
                 if (!_creating)
-                  TextButton(onPressed: _busy ? null : _forgot, child: const Text('Esqueci minha senha')),
+                  TextButton(
+                      onPressed: _busy ? null : _forgot,
+                      child: const Text('Esqueci minha senha')),
               ],
             ),
           ),

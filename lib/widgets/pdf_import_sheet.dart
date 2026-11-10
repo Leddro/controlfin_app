@@ -8,23 +8,27 @@ import '../services/pdf_import_service.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
-/// Bottom sheet que recebe os bytes de um PDF de fatura, extrai os
+/// Bottom sheet que recebe os bytes de um arquivo (PDF ou CSV), extrai os
 /// lançamentos e deixa o usuário categorizar cada um antes de salvar.
-class PdfImportSheet extends StatefulWidget {
+class ImportReviewSheet extends StatefulWidget {
   final Uint8List bytes;
   final DateTime defaultDate;
+  final Future<List<ParsedItem>> Function(Uint8List) parser;
+  final String title;
 
-  const PdfImportSheet({
+  const ImportReviewSheet({
     super.key,
     required this.bytes,
     required this.defaultDate,
+    required this.parser,
+    this.title = 'Importar lançamentos',
   });
 
   @override
-  State<PdfImportSheet> createState() => _PdfImportSheetState();
+  State<ImportReviewSheet> createState() => _ImportReviewSheetState();
 }
 
-class _PdfImportSheetState extends State<PdfImportSheet> {
+class _ImportReviewSheetState extends State<ImportReviewSheet> {
   final List<_ParsedItem> _items = [];
   bool _loading = true;
   String? _error;
@@ -37,7 +41,7 @@ class _PdfImportSheetState extends State<PdfImportSheet> {
 
   Future<void> _parse() async {
     try {
-      final parsed = await PdfImportService.parse(widget.bytes);
+      final parsed = await widget.parser(widget.bytes);
       setState(() {
         _items.addAll(parsed.map((item) => _ParsedItem(
               description: item.description,
@@ -158,7 +162,7 @@ class _PdfImportSheetState extends State<PdfImportSheet> {
             // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-              child: Text('Importar fatura',
+              child: Text(widget.title,
                   style: theme.textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.w800)),
             ),
@@ -219,8 +223,8 @@ class _PdfImportSheetState extends State<PdfImportSheet> {
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: item.type == TxType.income
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFFB91C1C),
+                    ? const Color(0xFF4ADE80)
+                    : const Color(0xFFF87171),
               )),
         ]),
         // Linha 2: tipo + categorias

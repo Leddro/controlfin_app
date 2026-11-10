@@ -20,9 +20,10 @@ class FinancasApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const ink = Color(0xFF14232B);
+    const yellow = Color(0xFFFBBF24);
+    const bg = Color(0xFF0A0A0A);
     return MaterialApp(
-      title: 'Finanças',
+      title: 'ControlFin',
       debugShowCheckedModeBanner: false,
       locale: const Locale('pt', 'BR'),
       supportedLocales: const [Locale('pt', 'BR')],
@@ -34,15 +35,20 @@ class FinancasApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0F766E),
-          surface: const Color(0xFFF4F6F3),
-          onSurface: ink,
+          seedColor: yellow,
+          brightness: Brightness.dark,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF4F6F3),
+        scaffoldBackgroundColor: bg,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF4F6F3),
-          foregroundColor: ink,
+          backgroundColor: bg,
+          foregroundColor: Colors.white,
           elevation: 0,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: yellow,
+            foregroundColor: bg,
+          ),
         ),
       ),
       home: StreamBuilder<User?>(

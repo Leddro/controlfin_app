@@ -1,8 +1,8 @@
-# Finanças (Flutter + Firebase)
+# ControlFin (Flutter + Firebase)
 
-Planilha financeira pessoal: o usuário registra ganhos e gastos, o app agrupa por
-categoria e mostra um gráfico e barras que destacam o que mais pesa na renda.
-Funciona em Android, iOS e Web com o mesmo código.
+ControlFin é uma planilha financeira pessoal: o usuário registra ganhos e gastos,
+o app agrupa por categoria e mostra um gráfico e barras que destacam o que mais
+pesa na renda. Funciona em Android, iOS e Web com o mesmo código.
 
 ## 1. Criar o projeto Flutter e copiar os arquivos
 
@@ -55,26 +55,29 @@ firebase deploy                # publica em https://SEU-PROJETO.web.app
 
 ```
 lib/
-  main.dart                  # Firebase, tema, alterna login/home
+  main.dart                  # Firebase, tema dark (preto/amarelo), ControlFin
   models/tx.dart             # lançamento, categorias, sugestão automática
   models/user_settings.dart  # renda, meses de reserva, valor guardado
   services/auth_service.dart # e-mail/senha + Google
-  services/tx_service.dart   # Firestore: users/{uid}/transactions
+  services/tx_service.dart   # Firestore: users/{uid}/transactions (CRUD + séries)
   services/settings_service.dart # Firestore: users/{uid}/settings/profile
   services/pdf_import_service.dart # extrai lançamentos de PDF de fatura
+  services/csv_import_service.dart # extrai lançamentos de CSV
   pages/login_page.dart
-  pages/home_page.dart       # resumo, metas, gráfico, categorias, lista, formulário
+  pages/home_page.dart       # resumo, metas, gráfico, lista, formulário, importar
   widgets/goals_card.dart    # regra 50/30/20, reserva de emergência, diálogo de metas
-  widgets/pdf_import_sheet.dart # revisão de itens importados do PDF
+  widgets/pdf_import_sheet.dart # revisão de itens importados (PDF/CSV)
 ```
 
 ## Recursos
 
 - **Lançamentos**: ganhos e gastos com categorias visuais e sugestão automática por palavra-chave
+- **Editar/Excluir**: toque em um lançamento para editar; botão de lixeira para excluir (com diálogo em séries)
 - **Parcelamento**: digite o valor da parcela, quantas são no total e em qual você está; o app calcula o total e gera as parcelas restantes
 - **Recorrente**: lança automaticamente todo mês por N meses
 - **Metas (50/30/20)**: essenciais, desejos e quanto guardar, com base na renda média
 - **Reserva de emergência**: meta de 3 a 12 meses de gastos essenciais
 - **Importar fatura (PDF)**: selecione o PDF da fatura do cartão, o app extrai os lançamentos e você categoriza cada um antes de salvar
+- **Importar CSV**: selecione um arquivo CSV exportado do banco ou cartão, o app identifica as colunas e você categoriza antes de salvar
 
 > **Licença Syncfusion**: o pacote `syncfusion_flutter_pdf` exige uma licença Syncfusion válida (Community ou comercial). A partir da versão 18.3, não é necessário registrar a chave no código — basta possuir uma licença ativa. Saiba mais em [syncfusion.com/products/communitylicense](https://www.syncfusion.com/products/communitylicense).

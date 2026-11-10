@@ -6,21 +6,29 @@ import '../models/user_settings.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
-const _teal = Color(0xFF0F766E);
-const _amber = Color(0xFFB45309);
-const _red = Color(0xFFB91C1C);
+const _teal = Color(0xFF4ADE80);
+const _amber = Color(0xFFFBBF24);
+const _red = Color(0xFFF87171);
 
 class GoalsCard extends StatelessWidget {
   final UserSettings settings;
   final List<Tx> txs;
   final VoidCallback onEdit;
 
-  const GoalsCard({super.key, required this.settings, required this.txs, required this.onEdit});
+  const GoalsCard(
+      {super.key,
+      required this.settings,
+      required this.txs,
+      required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final box = BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20));
+    final box = BoxDecoration(
+      color: const Color(0xFF1A1A1A),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+    );
 
     final income = settings.monthlyIncome ?? 0;
 
@@ -30,12 +38,15 @@ class GoalsCard extends StatelessWidget {
         decoration: box,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Defina sua renda média mensal',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          const Text('Com ela, o app calcula quanto você pode gastar em cada área '
+          const Text(
+              'Com ela, o app calcula quanto você pode gastar em cada área '
               'e quanto guardar para a reserva de emergência.'),
           const SizedBox(height: 12),
-          FilledButton.tonal(onPressed: onEdit, child: const Text('Definir renda')),
+          FilledButton.tonal(
+              onPressed: onEdit, child: const Text('Definir renda')),
         ]),
       );
     }
@@ -52,7 +63,8 @@ class GoalsCard extends StatelessWidget {
     final base = needs > 0 ? needs : income * 0.5;
     final target = base * settings.emergencyMonths;
     final reserve = settings.reserveSaved;
-    final reserveProgress = target <= 0 ? 0.0 : (reserve / target).clamp(0.0, 1.0).toDouble();
+    final reserveProgress =
+        target <= 0 ? 0.0 : (reserve / target).clamp(0.0, 1.0).toDouble();
     final remaining = target - reserve;
     final monthsLeft = remaining <= 0 ? 0 : (remaining / (income * 0.2)).ceil();
 
@@ -63,7 +75,8 @@ class GoalsCard extends StatelessWidget {
         Row(children: [
           Expanded(
             child: Text('Suas metas do mês',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700)),
           ),
           TextButton.icon(
             onPressed: onEdit,
@@ -71,7 +84,8 @@ class GoalsCard extends StatelessWidget {
             label: const Text('Ajustar'),
           ),
         ]),
-        Text('Renda média: ${_money.format(income)}', style: theme.textTheme.bodyMedium),
+        Text('Renda média: ${_money.format(income)}',
+            style: theme.textTheme.bodyMedium),
         const SizedBox(height: 16),
         _GoalRow(
           label: 'Essenciais (50%)',
@@ -94,9 +108,11 @@ class GoalsCard extends StatelessWidget {
         ),
         const Divider(height: 32),
         Text('Reserva de emergência',
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text('Meta: ${_money.format(target)} (${settings.emergencyMonths} meses de gastos essenciais)'),
+        Text(
+            'Meta: ${_money.format(target)} (${settings.emergencyMonths} meses de gastos essenciais)'),
         const SizedBox(height: 10),
         ClipRRect(
           borderRadius: BorderRadius.circular(4),
@@ -146,7 +162,8 @@ class _GoalRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final shown = value < 0 ? 0.0 : value;
-    final progress = goal <= 0 ? 0.0 : (shown / goal).clamp(0.0, 1.0).toDouble();
+    final progress =
+        goal <= 0 ? 0.0 : (shown / goal).clamp(0.0, 1.0).toDouble();
 
     late final Color color;
     late final String status;
@@ -170,7 +187,9 @@ class _GoalRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700))),
+          Expanded(
+              child: Text(label,
+                  style: const TextStyle(fontWeight: FontWeight.w700))),
           Text('${_money.format(shown)} de ${_money.format(goal)}'),
         ]),
         Text(hint, style: theme.textTheme.bodySmall),
@@ -185,7 +204,8 @@ class _GoalRow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        Text(status,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600)),
       ]),
     );
   }
@@ -198,7 +218,8 @@ Future<UserSettings?> showGoalsDialog(
 ) {
   return showDialog<UserSettings>(
     context: context,
-    builder: (_) => _GoalsDialog(current: current, suggestAverage: suggestAverage),
+    builder: (_) =>
+        _GoalsDialog(current: current, suggestAverage: suggestAverage),
   );
 }
 
@@ -213,8 +234,10 @@ class _GoalsDialog extends StatefulWidget {
 }
 
 class _GoalsDialogState extends State<_GoalsDialog> {
-  late final _income = TextEditingController(text: _fmt(widget.current.monthlyIncome));
-  late final _reserve = TextEditingController(text: _fmt(widget.current.reserveSaved));
+  late final _income =
+      TextEditingController(text: _fmt(widget.current.monthlyIncome));
+  late final _reserve =
+      TextEditingController(text: _fmt(widget.current.reserveSaved));
   late int _months = widget.current.emergencyMonths;
   String? _hint;
 
@@ -259,44 +282,60 @@ class _GoalsDialogState extends State<_GoalsDialog> {
     return AlertDialog(
       title: const Text('Renda e metas'),
       content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          TextField(
-            controller: _income,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Renda média mensal', prefixText: r'R$ ', border: OutlineInputBorder()),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(onPressed: _useAverage, child: const Text('Usar média dos últimos 3 meses')),
-          ),
-          if (_hint != null) Text(_hint!, style: small),
-          const SizedBox(height: 12),
-          const Text('Reserva de emergência: quantos meses de gastos essenciais?',
-              style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, children: [
-            for (final m in [3, 6, 9, 12])
-              ChoiceChip(
-                label: Text('$m meses'),
-                selected: _months == m,
-                onSelected: (_) => setState(() => _months = m),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _income,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Renda média mensal',
+                    prefixText: r'R$ ',
+                    border: OutlineInputBorder()),
               ),
-          ]),
-          const SizedBox(height: 6),
-          Text('3 meses: renda estável (CLT, servidor). 6 meses: padrão mais comum. '
-              '12 meses: autônomo ou renda variável.', style: small),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _reserve,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Já tenho guardado na reserva', prefixText: r'R$ ', border: OutlineInputBorder()),
-          ),
-        ]),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                    onPressed: _useAverage,
+                    child: const Text('Usar média dos últimos 3 meses')),
+              ),
+              if (_hint != null) Text(_hint!, style: small),
+              const SizedBox(height: 12),
+              const Text(
+                  'Reserva de emergência: quantos meses de gastos essenciais?',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, children: [
+                for (final m in [3, 6, 9, 12])
+                  ChoiceChip(
+                    label: Text('$m meses'),
+                    selected: _months == m,
+                    onSelected: (_) => setState(() => _months = m),
+                  ),
+              ]),
+              const SizedBox(height: 6),
+              Text(
+                  '3 meses: renda estável (CLT, servidor). 6 meses: padrão mais comum. '
+                  '12 meses: autônomo ou renda variável.',
+                  style: small),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _reserve,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Já tenho guardado na reserva',
+                    prefixText: r'R$ ',
+                    border: OutlineInputBorder()),
+              ),
+            ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar')),
         FilledButton(onPressed: _save, child: const Text('Salvar')),
       ],
     );
