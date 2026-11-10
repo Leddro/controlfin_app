@@ -172,8 +172,11 @@ class Tx {
 }
 
 /// Gera um lançamento único, uma série mensal ou as parcelas de uma compra.
-/// Em parcelas, [amount] é o valor TOTAL; os centavos de arredondamento
-/// ficam nas primeiras parcelas para a soma fechar exatamente.
+///
+/// - [perInstallment] = false (padrão): [amount] é o valor TOTAL da compra.
+/// - [perInstallment] = true: [amount] é o valor de CADA parcela.
+/// - [startIndex] indica a partir de qual parcela gerar (ex.: já pagou as 2
+///   primeiras, começar pela 3).
 List<Tx> buildSeries({
   required TxType type,
   required double amount,
@@ -182,6 +185,8 @@ List<Tx> buildSeries({
   required DateTime start,
   required TxKind kind,
   int count = 1,
+  int startIndex = 1,
+  bool perInstallment = false,
 }) {
   if (kind == TxKind.single || count <= 1) {
     return [
@@ -196,14 +201,50 @@ List<Tx> buildSeries({
 
   final groupId = '${DateTime.now().microsecondsSinceEpoch}';
 
+  if (kind == TxKind.recurring) {
+    return List.generate(count, (i) {
+      return Tx(
+        type: type,
+        amount: amount,
+        category: category,
+        description: description,
+        date: addMonths(start, i),
+        groupId: groupId,
+        kind: kind,
+        index: i + 1,
+        count: count,
+      );
+    });
+  }
+
+  // Parcelada
+  final remaining = count - startIndex + 1;
+
+  if (perInstallment) {
+    // amount já é o valor de cada parcela — não precisa dividir
+    return List.generate(remaining, (i) {
+      return Tx(
+        type: type,
+        amount: amount,
+        category: category,
+        description: description,
+        date: addMonths(start, i),
+        groupId: groupId,
+        kind: kind,
+        index: startIndex + i,
+        count: count,
+      );
+    });
+  }
+
+  // amount é o total — divide entre as parcelas com ajuste de centavos
   final totalCents = (amount * 100).round();
   final baseCents = totalCents ~/ count;
   final extra = totalCents - baseCents * count;
 
-  return List.generate(count, (i) {
-    final value = kind == TxKind.recurring
-        ? amount
-        : (baseCents + (i < extra ? 1 : 0)) / 100;
+  return List.generate(remaining, (i) {
+    final idx = startIndex + i;
+    final value = (baseCents + ((idx - 1) < extra ? 1 : 0)) / 100;
     return Tx(
       type: type,
       amount: value,
@@ -212,7 +253,7 @@ List<Tx> buildSeries({
       date: addMonths(start, i),
       groupId: groupId,
       kind: kind,
-      index: i + 1,
+      index: idx,
       count: count,
     );
   });

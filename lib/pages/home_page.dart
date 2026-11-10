@@ -1,4 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -8,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../widgets/goals_card.dart';
+import '../widgets/pdf_import_sheet.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -34,6 +36,11 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Finanças',
             style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
+          IconButton(
+            tooltip: 'Importar fatura (PDF)',
+            icon: const Icon(Icons.upload_file_rounded),
+            onPressed: () => _importPdf(context),
+          ),
           IconButton(
             tooltip: 'Sair',
             icon: const Icon(Icons.logout_rounded),
@@ -99,6 +106,28 @@ class _HomePageState extends State<HomePage> {
     final result =
         await showGoalsDialog(context, current, _service.averageIncome);
     if (result != null) await _settingsService.save(result);
+  }
+
+  Future<void> _importPdf(BuildContext context) async {
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+    if (file == null || !context.mounted) return;
+
+    final bytes = await file.readAsBytes();
+    if (!context.mounted) return;
+
+    final txs = await showModalBottomSheet<List<Tx>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => PdfImportSheet(
+        bytes: bytes,
+        defaultDate: DateTime(_month.year, _month.month, 1),
+      ),
+    );
+    if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
   }
 
   Widget _monthSelector() {
@@ -383,6 +412,7 @@ class _TxFormState extends State<_TxForm> {
   TxType _type = TxType.expense;
   TxKind _kind = TxKind.single;
   int _count = 12;
+  int _currentIndex = 1;
   String _category = 'Outros';
   bool _manualCategory = false;
   late DateTime _date = widget.initialDate;
@@ -414,6 +444,8 @@ class _TxFormState extends State<_TxForm> {
         start: DateTime(_date.year, _date.month, _date.day),
         kind: _kind,
         count: _count,
+        startIndex: _kind == TxKind.installment ? _currentIndex : 1,
+        perInstallment: _kind == TxKind.installment,
       ),
     );
   }
@@ -422,7 +454,9 @@ class _TxFormState extends State<_TxForm> {
     final value = parseMoney(_amount.text);
     if (_kind == TxKind.installment) {
       if (value == null || value <= 0) return null;
-      return '${_count}x de ${_money.format(value / _count)} (total ${_money.format(value)})';
+      final total = value * _count;
+      final remaining = _count - _currentIndex + 1;
+      return 'Total: ${_money.format(total)}. Faltam $remaining parcelas de ${_money.format(value)}.';
     }
     if (_kind == TxKind.recurring) {
       return 'Será lançado todo mês, por $_count meses, a partir de ${DateFormat('dd/MM/yyyy').format(_date)}.';
@@ -466,9 +500,8 @@ class _TxFormState extends State<_TxForm> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              labelText: _kind == TxKind.installment
-                  ? 'Valor total da compra'
-                  : 'Valor',
+              labelText:
+                  _kind == TxKind.installment ? 'Valor da parcela' : 'Valor',
               prefixText: r'R$ ',
               border: const OutlineInputBorder(),
             ),
@@ -513,6 +546,7 @@ class _TxFormState extends State<_TxForm> {
             onSelectionChanged: (s) => setState(() {
               _kind = s.first;
               _count = _kind == TxKind.installment ? 3 : 12;
+              _currentIndex = 1;
             }),
           ),
           if (_kind != TxKind.single) ...[
@@ -529,9 +563,26 @@ class _TxFormState extends State<_TxForm> {
                   label:
                       Text(_kind == TxKind.installment ? '${n}x' : '$n meses'),
                   selected: _count == n,
-                  onSelected: (_) => setState(() => _count = n),
+                  onSelected: (_) => setState(() {
+                    _count = n;
+                    if (_currentIndex > n) _currentIndex = 1;
+                  }),
                 ),
             ]),
+            if (_kind == TxKind.installment) ...[
+              const SizedBox(height: 12),
+              Text('Qual parcela você está?',
+                  style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 1; i <= _count; i++)
+                  ChoiceChip(
+                    label: Text('$i'),
+                    selected: _currentIndex == i,
+                    onSelected: (_) => setState(() => _currentIndex = i),
+                  ),
+              ]),
+            ],
             if (preview != null) ...[
               const SizedBox(height: 8),
               Text(preview, style: theme.textTheme.bodyMedium),

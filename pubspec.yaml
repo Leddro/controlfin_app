@@ -16,6 +16,8 @@ dependencies:
   cloud_firestore: ^5.4.4
   fl_chart: ^0.69.0
   intl: 0.20.3
+  file_picker: ^13.3.3
+  syncfusion_flutter_pdf: ^35.1.43
 
 dev_dependencies:
   flutter_test:

@@ -61,7 +61,23 @@ lib/
   services/auth_service.dart # e-mail/senha + Google
   services/tx_service.dart   # Firestore: users/{uid}/transactions
   services/settings_service.dart # Firestore: users/{uid}/settings/profile
+  services/pdf_import_service.dart # extrai lançamentos de PDF de fatura
   pages/login_page.dart
   pages/home_page.dart       # resumo, metas, gráfico, categorias, lista, formulário
   widgets/goals_card.dart    # regra 50/30/20, reserva de emergência, diálogo de metas
+  widgets/pdf_import_sheet.dart # revisão de itens importados do PDF
 ```
+
+## Recursos
+
+- **Lançamentos**: ganhos e gastos com categorias visuais e sugestão automática por palavra-chave
+- **Parcelamento**: digite o valor da parcela, quantas são no total e em qual você está; o app calcula o total e gera as parcelas restantes
+- **Recorrente**: lança automaticamente todo mês por N meses
+- **Metas (50/30/20)**: essenciais, desejos e quanto guardar, com base na renda média
+- **Reserva de emergência**: meta de 3 a 12 meses de gastos essenciais
+- **Importar fatura (PDF)**: selecione o PDF da fatura do cartão, o app extrai os lançamentos e você categoriza cada um antes de salvar
+
+> **Licença Syncfusion**: o pacote `syncfusion_flutter_pdf` exige uma licença. Para uso individual ou pequenas empresas (< US$ 1 mi/ano), a [Community License](https://www.syncfusion.com/products/communitylicense) é gratuita. Registre-se e adicione a chave em `main.dart`:
+> ```dart
+> SyncfusionLicense.registerLicense('SUA_CHAVE');
+> ```
