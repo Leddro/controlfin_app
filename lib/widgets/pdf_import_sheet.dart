@@ -55,7 +55,7 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
     } catch (_) {
       setState(() {
         _error =
-            'Não foi possível ler o PDF. Verifique se o arquivo é uma fatura válida.';
+            'Não foi possível ler o arquivo. Verifique se é um PDF ou CSV válido.';
         _loading = false;
       });
     }
@@ -83,7 +83,7 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('Lendo fatura...'),
+          Text('Lendo arquivo...'),
         ]),
       );
     } else if (_error != null) {
@@ -107,11 +107,11 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.search_off_rounded, size: 48),
           const SizedBox(height: 12),
-          Text('Nenhum lançamento encontrado no PDF.',
+          Text('Nenhum lançamento encontrado no arquivo.',
               textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 4),
           const Text(
-              'Verifique se o arquivo é uma fatura de cartão de crédito.'),
+              'Verifique se o arquivo é uma fatura de cartão (PDF ou CSV).'),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => Navigator.pop(context),
@@ -120,7 +120,7 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
         ]),
       );
     } else {
-      body = Column(mainAxisSize: MainAxisSize.min, children: [
+      body = Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           child: Row(children: [
@@ -166,7 +166,7 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
                   style: theme.textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.w800)),
             ),
-            body,
+            Expanded(child: body),
             if (!_loading && _error == null && _items.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
