@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../widgets/app_logo.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -59,11 +60,31 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('ControlFin',
-                    style: theme.textTheme.displaySmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                // Logo + nome
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const AppLogo(size: 56),
+                    const SizedBox(width: 16),
+                    RichText(
+                      text: TextSpan(
+                        style: theme.textTheme.displaySmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                        children: const [
+                          TextSpan(
+                              text: 'Control',
+                              style: TextStyle(color: Colors.white)),
+                          TextSpan(
+                              text: 'Fin',
+                              style: TextStyle(color: Color(0xFFFBBF24))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Text('Controle total das suas finanças.',
+                    textAlign: TextAlign.center,
                     style: theme.textTheme.bodyLarge),
                 const SizedBox(height: 32),
                 OutlinedButton.icon(

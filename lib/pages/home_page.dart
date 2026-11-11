@@ -10,6 +10,7 @@ import '../services/csv_import_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
+import '../widgets/app_logo.dart';
 import '../widgets/goals_card.dart';
 import '../widgets/pdf_import_sheet.dart';
 
@@ -35,8 +36,13 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const Padding(
+          padding: EdgeInsets.all(10),
+          child: AppLogo(size: 32),
+        ),
         title: const Text('ControlFin',
-            style: TextStyle(fontWeight: FontWeight.w800)),
+            style: TextStyle(
+                fontWeight: FontWeight.w800, color: Color(0xFFFBBF24))),
         actions: [
           PopupMenuButton<String>(
             tooltip: 'Importar',
