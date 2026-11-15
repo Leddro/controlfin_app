@@ -16,11 +16,20 @@ class GoalsCard extends StatelessWidget {
   final List<Tx> txs;
   final VoidCallback onEdit;
 
-  const GoalsCard(
-      {super.key,
-      required this.settings,
-      required this.txs,
-      required this.onEdit});
+  /// Toque numa meta de gasto (todas menos "Guardar"): filtra os lançamentos.
+  final ValueChanged<String>? onSelectGoal;
+
+  /// Meta usada no filtro dos lançamentos, destacada no cartão.
+  final String? selectedGoal;
+
+  const GoalsCard({
+    super.key,
+    required this.settings,
+    required this.txs,
+    required this.onEdit,
+    this.onSelectGoal,
+    this.selectedGoal,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +107,10 @@ class GoalsCard extends StatelessWidget {
         ]),
         Text('Renda média: ${_money.format(income)}',
             style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 16),
+        if (onSelectGoal != null)
+          Text('Toque numa meta para ver os gastos dela.',
+              style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
         for (final budget in budgets)
           _GoalRow(
             label: '${budget.name} (${_percentLabel(budget.percent)}%)',
@@ -108,6 +120,10 @@ class GoalsCard extends StatelessWidget {
                 : byGoal[budget.name] ?? 0,
             goal: income * budget.percent / 100,
             saving: budget.kind == BudgetKind.save,
+            selected: selectedGoal == budget.name,
+            onTap: budget.kind == BudgetKind.save || onSelectGoal == null
+                ? null
+                : () => onSelectGoal!(budget.name),
           ),
         const Divider(height: 32),
         Text('Reserva de emergência',
@@ -176,6 +192,8 @@ class _GoalRow extends StatelessWidget {
   final double value;
   final double goal;
   final bool saving;
+  final bool selected;
+  final VoidCallback? onTap;
 
   const _GoalRow({
     required this.label,
@@ -183,6 +201,8 @@ class _GoalRow extends StatelessWidget {
     required this.value,
     required this.goal,
     this.saving = false,
+    this.selected = false,
+    this.onTap,
   });
 
   @override
@@ -210,30 +230,55 @@ class _GoalRow extends StatelessWidget {
       status = 'Restam ${_money.format(goal - value)}';
     }
 
+    final content =
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w700))),
+        Text('${_money.format(shown)} de ${_money.format(goal)}'),
+        if (onTap != null)
+          Icon(Icons.chevron_right_rounded,
+              size: 20, color: theme.colorScheme.outline),
+      ]),
+      Text(hint, style: theme.textTheme.bodySmall),
+      const SizedBox(height: 6),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: 8,
+          color: color,
+          backgroundColor: color.withValues(alpha: 0.12),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+    ]);
+
+    // Material próprio para o efeito de toque aparecer sobre o fundo do cartão.
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-              child: Text(label,
-                  style: const TextStyle(fontWeight: FontWeight.w700))),
-          Text('${_money.format(shown)} de ${_money.format(goal)}'),
-        ]),
-        Text(hint, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
-            color: color,
-            backgroundColor: color.withValues(alpha: 0.12),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: selected ? _amber.withValues(alpha: 0.08) : null,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? _amber.withValues(alpha: 0.6)
+                    : Colors.transparent,
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: content,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(status,
-            style: TextStyle(color: color, fontWeight: FontWeight.w600)),
-      ]),
+      ),
     );
   }
 }

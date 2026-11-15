@@ -160,6 +160,31 @@ void main() {
         ['Essenciais', 'Desejos', 'Guardar']);
   });
 
+  testWidgets('tocar numa meta de gasto avisa qual foi; Guardar não',
+      (tester) async {
+    final tapped = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: GoalsCard(
+            settings: const UserSettings(monthlyIncome: 3000),
+            txs: const [],
+            onEdit: () {},
+            onSelectGoal: tapped.add,
+            selectedGoal: 'Desejos',
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('Essenciais (50%)'));
+    await tester.tap(find.text('Desejos (30%)'));
+    await tester.tap(find.text('Guardar (20%)'));
+    expect(tapped, ['Essenciais', 'Desejos']);
+    expect(
+        find.text('Toque numa meta para ver os gastos dela.'), findsOneWidget);
+  });
+
   test('cada gasto conta na meta certa', () {
     const settings = UserSettings(
       budgets: [

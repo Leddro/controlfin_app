@@ -34,8 +34,34 @@ class _HomePageState extends State<HomePage> {
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   int? _touched;
 
-  void _shift(int delta) =>
-      setState(() => _month = DateTime(_month.year, _month.month + delta));
+  /// Filtro da lista: nulo = todos, [_incomeFilter] = ganhos, ou o nome de
+  /// uma meta de gasto.
+  String? _filter;
+  static const _incomeFilter = '__ganhos__';
+  final _listKey = GlobalKey();
+
+  // Guardados para não reabrir a conexão com o Firestore a cada setState.
+  late final Stream<UserSettings> _settingsStream = _settingsService.watch();
+  late Stream<List<Tx>> _txStream = _service.watchMonth(_month);
+
+  void _shift(int delta) => setState(() {
+        _month = DateTime(_month.year, _month.month + delta);
+        _txStream = _service.watchMonth(_month);
+      });
+
+  /// Aplica o filtro da meta e rola até a lista de lançamentos.
+  void _showGoal(String goal) {
+    setState(() => _filter = goal);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _listKey.currentContext;
+      if (target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,20 +71,38 @@ class _HomePageState extends State<HomePage> {
           padding: EdgeInsets.all(10),
           child: AppLogo(size: 32),
         ),
-        title: const Text('ControlFin',
-            style: TextStyle(
-                fontWeight: FontWeight.w800, color: Color(0xFFFBBF24))),
+        // Encolhe em telas estreitas para caber o botão de importar.
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('ControlFin',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFFFBBF24))),
+        ),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Importar',
-            icon: const Icon(Icons.upload_file_rounded),
-            onSelected: (v) {
-              if (v == 'pdf') _importPdf(context);
-              if (v == 'csv') _importCsv(context);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'pdf', child: Text('Importar fatura (PDF)')),
-              PopupMenuItem(value: 'csv', child: Text('Importar CSV')),
+          MenuAnchor(
+            alignmentOffset: const Offset(0, 4),
+            builder: (context, controller, _) => FilledButton.icon(
+              onPressed: () =>
+                  controller.isOpen ? controller.close() : controller.open(),
+              icon: const Icon(Icons.receipt_long_rounded, size: 18),
+              label: const Text('Importar fatura'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            menuChildren: [
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.picture_as_pdf_rounded),
+                onPressed: () => _importPdf(context),
+                child: const Text('Fatura em PDF'),
+              ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.table_chart_rounded),
+                onPressed: () => _importCsv(context),
+                child: const Text('Arquivo CSV'),
+              ),
             ],
           ),
           Padding(
@@ -80,12 +124,12 @@ class _HomePageState extends State<HomePage> {
         label: const Text('Adicionar'),
       ),
       body: StreamBuilder<UserSettings>(
-        stream: _settingsService.watch(),
+        stream: _settingsStream,
         builder: (context, settingsSnap) {
           final settings = settingsSnap.data ?? _settings;
           _settings = settings;
           return StreamBuilder<List<Tx>>(
-            stream: _service.watchMonth(_month),
+            stream: _txStream,
             builder: (context, snap) {
               if (snap.hasError) {
                 return const Center(
@@ -98,27 +142,33 @@ class _HomePageState extends State<HomePage> {
               return Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 720),
-                  child: ListView(
+                  // Coluna inteira (não ListView) para a lista existir e o
+                  // toque numa meta conseguir rolar até ela.
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                    children: [
-                      _monthSelector(),
-                      const SizedBox(height: 8),
-                      _summary(txs),
-                      const SizedBox(height: 16),
-                      GoalsCard(
-                        settings: settings,
-                        txs: txs,
-                        onEdit: () => _editGoals(settings),
-                      ),
-                      const SizedBox(height: 16),
-                      if (txs.isEmpty)
-                        _empty()
-                      else ...[
-                        _breakdown(txs, settings),
-                        const SizedBox(height: 24),
-                        _list(txs, settings),
-                      ],
-                    ],
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _monthSelector(),
+                          const SizedBox(height: 8),
+                          _summary(txs),
+                          const SizedBox(height: 16),
+                          GoalsCard(
+                            settings: settings,
+                            txs: txs,
+                            onEdit: () => _editGoals(settings),
+                            onSelectGoal: _showGoal,
+                            selectedGoal: _filter,
+                          ),
+                          const SizedBox(height: 16),
+                          if (txs.isEmpty)
+                            _empty()
+                          else ...[
+                            _breakdown(txs, settings),
+                            const SizedBox(height: 24),
+                            _list(txs, settings),
+                          ],
+                        ]),
                   ),
                 ),
               );
@@ -155,6 +205,7 @@ class _HomePageState extends State<HomePage> {
         parser: PdfImportService.parse,
         title: 'Importar fatura',
         expenseTypes: _settings.expenseTypes,
+        loadExisting: _service.fetchRange,
       ),
     );
     if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
@@ -180,6 +231,7 @@ class _HomePageState extends State<HomePage> {
         parser: (b) async => CsvImportService.parse(b),
         title: 'Importar CSV',
         expenseTypes: _settings.expenseTypes,
+        loadExisting: _service.fetchRange,
       ),
     );
     if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
@@ -371,69 +423,141 @@ class _HomePageState extends State<HomePage> {
     return '${t.category} • $date$extra';
   }
 
-  Widget _list(List<Tx> txs, UserSettings settings) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Lançamentos',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w700)),
-      const SizedBox(height: 8),
-      for (final t in txs)
-        Dismissible(
-          key: ValueKey(t.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
-            color: Colors.red.shade100,
-            child: const Icon(Icons.delete_outline_rounded),
+  Widget _list(List<Tx> all, UserSettings settings) {
+    final theme = Theme.of(context);
+    final goals = spendingGoals(settings.effectiveBudgets);
+    // Meta removida ou renomeada: volta a mostrar tudo.
+    final filter = _filter == null ||
+            _filter == _incomeFilter ||
+            goals.any((g) => g.name == _filter)
+        ? _filter
+        : null;
+
+    final txs = switch (filter) {
+      null => all,
+      _incomeFilter => all.where((t) => t.type == TxType.income).toList(),
+      final goal => all
+          .where((t) =>
+              t.type == TxType.expense &&
+              settings.budgetOf(t.category).name == goal)
+          .toList(),
+    };
+    final total = txs.fold(0.0, (s, t) => s + t.amount);
+
+    Widget chip(String label, String? value) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            key: Key('filter-${value ?? 'todos'}'),
+            label: Text(label),
+            selected: filter == value,
+            onSelected: (_) => setState(() =>
+                _filter = filter == value && value != null ? null : value),
           ),
-          // A exclusão é feita aqui; o item some quando o Firestore atualiza a lista.
-          confirmDismiss: (_) async {
-            await _confirmDelete(t);
-            return false;
-          },
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            onTap: () => _editTx(t),
-            leading: CircleAvatar(
-              backgroundColor:
-                  categoryOf(t.type, t.category, extra: settings.expenseTypes)
+        );
+
+    return Column(
+        key: _listKey,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Lançamentos',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              chip('Todos', null),
+              for (final goal in goals) chip(goal.name, goal.name),
+              chip('Ganhos', _incomeFilter),
+            ]),
+          ),
+          if (filter != null) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: Text(
+                  '${txs.length} lançamento${txs.length == 1 ? '' : 's'} • '
+                  '${_money.format(total)}',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() => _filter = null),
+                icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
+                label: const Text('Limpar filtro'),
+              ),
+            ]),
+          ],
+          const SizedBox(height: 4),
+          if (txs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  filter == _incomeFilter
+                      ? 'Nenhum ganho neste mês.'
+                      : 'Nenhum gasto em $filter neste mês.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ),
+          for (final t in txs)
+            Dismissible(
+              key: ValueKey(t.id),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: Colors.red.shade100,
+                child: const Icon(Icons.delete_outline_rounded),
+              ),
+              // A exclusão é feita aqui; o item some quando o Firestore atualiza a lista.
+              confirmDismiss: (_) async {
+                await _confirmDelete(t);
+                return false;
+              },
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                onTap: () => _editTx(t),
+                leading: CircleAvatar(
+                  backgroundColor: categoryOf(t.type, t.category,
+                          extra: settings.expenseTypes)
                       .color
                       .withValues(alpha: 0.20),
-              child: Icon(
-                  categoryOf(t.type, t.category, extra: settings.expenseTypes)
-                      .icon,
-                  color: categoryOf(t.type, t.category,
-                          extra: settings.expenseTypes)
-                      .color,
-                  size: 20),
-            ),
-            title: Text(t.description.isEmpty ? t.category : t.description),
-            subtitle: Text(_subtitle(t)),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: t.type == TxType.income
-                        ? const Color(0xFF4ADE80)
-                        : const Color(0xFFF87171),
-                  ),
+                  child: Icon(
+                      categoryOf(t.type, t.category,
+                              extra: settings.expenseTypes)
+                          .icon,
+                      color: categoryOf(t.type, t.category,
+                              extra: settings.expenseTypes)
+                          .color,
+                      size: 20),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                  color: const Color(0xFFF87171),
-                  onPressed: () => _confirmDelete(t),
+                title: Text(t.description.isEmpty ? t.category : t.description),
+                subtitle: Text(_subtitle(t)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: t.type == TxType.income
+                            ? const Color(0xFF4ADE80)
+                            : const Color(0xFFF87171),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                      color: const Color(0xFFF87171),
+                      onPressed: () => _confirmDelete(t),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-    ]);
+        ]);
   }
 
   Future<void> _confirmDelete(Tx t) async {
