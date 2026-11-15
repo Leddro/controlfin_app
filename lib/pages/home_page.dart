@@ -11,6 +11,7 @@ import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/expense_type_dialog.dart';
 import '../widgets/goals_card.dart';
 import '../widgets/pdf_import_sheet.dart';
 
@@ -26,6 +27,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _service = TxService();
   final _settingsService = SettingsService();
+  UserSettings _settings = const UserSettings();
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   int? _touched;
 
@@ -71,7 +73,8 @@ class _HomePageState extends State<HomePage> {
       body: StreamBuilder<UserSettings>(
         stream: _settingsService.watch(),
         builder: (context, settingsSnap) {
-          final settings = settingsSnap.data ?? const UserSettings();
+          final settings = settingsSnap.data ?? _settings;
+          _settings = settings;
           return StreamBuilder<List<Tx>>(
             stream: _service.watchMonth(_month),
             builder: (context, snap) {
@@ -102,9 +105,9 @@ class _HomePageState extends State<HomePage> {
                       if (txs.isEmpty)
                         _empty()
                       else ...[
-                        _breakdown(txs),
+                        _breakdown(txs, settings),
                         const SizedBox(height: 24),
-                        _list(txs),
+                        _list(txs, settings),
                       ],
                     ],
                   ),
@@ -142,6 +145,7 @@ class _HomePageState extends State<HomePage> {
         defaultDate: DateTime(_month.year, _month.month, 1),
         parser: PdfImportService.parse,
         title: 'Importar fatura',
+        expenseTypes: _settings.expenseTypes,
       ),
     );
     if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
@@ -166,6 +170,7 @@ class _HomePageState extends State<HomePage> {
         defaultDate: DateTime(_month.year, _month.month, 1),
         parser: (b) async => CsvImportService.parse(b),
         title: 'Importar CSV',
+        expenseTypes: _settings.expenseTypes,
       ),
     );
     if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
@@ -176,7 +181,12 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _TxForm(initialDate: tx.date, editTx: tx),
+      builder: (_) => _TxForm(
+        initialDate: tx.date,
+        editTx: tx,
+        settings: _settings,
+        onSaveSettings: _persistSettings,
+      ),
     );
     if (result != null) await _service.update(result);
   }
@@ -240,7 +250,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _breakdown(List<Tx> txs) {
+  Future<void> _persistSettings(UserSettings next) async {
+    _settings = next;
+    await _settingsService.save(next);
+  }
+
+  Widget _breakdown(List<Tx> txs, UserSettings settings) {
     final theme = Theme.of(context);
     final expense = _sum(txs, TxType.expense);
     final income = _sum(txs, TxType.income);
@@ -253,7 +268,8 @@ class _HomePageState extends State<HomePage> {
     final sorted = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final top = sorted.first;
-    final topCat = categoryOf(TxType.expense, top.key);
+    final topCat =
+        categoryOf(TxType.expense, top.key, extra: settings.expenseTypes);
     final base = income > 0 ? income : expense;
     final headline = income > 0
         ? '${top.key} consome ${(top.value / base * 100).toStringAsFixed(0)}% da sua renda'
@@ -285,7 +301,9 @@ class _HomePageState extends State<HomePage> {
               for (var i = 0; i < sorted.length; i++)
                 PieChartSectionData(
                   value: sorted[i].value,
-                  color: categoryOf(TxType.expense, sorted[i].key).color,
+                  color: categoryOf(TxType.expense, sorted[i].key,
+                          extra: settings.expenseTypes)
+                      .color,
                   radius: _touched == i ? 40 : 32,
                   showTitle: false,
                 ),
@@ -293,13 +311,15 @@ class _HomePageState extends State<HomePage> {
           )),
         ),
         const SizedBox(height: 16),
-        for (final e in sorted) _categoryBar(e.key, e.value, expense),
+        for (final e in sorted)
+          _categoryBar(e.key, e.value, expense, settings.expenseTypes),
       ]),
     );
   }
 
-  Widget _categoryBar(String name, double value, double total) {
-    final cat = categoryOf(TxType.expense, name);
+  Widget _categoryBar(
+      String name, double value, double total, List<ExpenseType> types) {
+    final cat = categoryOf(TxType.expense, name, extra: types);
     final pct = value / total;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -342,7 +362,7 @@ class _HomePageState extends State<HomePage> {
     return '${t.category} • $date$extra';
   }
 
-  Widget _list(List<Tx> txs) {
+  Widget _list(List<Tx> txs, UserSettings settings) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Lançamentos',
           style: Theme.of(context)
@@ -369,10 +389,17 @@ class _HomePageState extends State<HomePage> {
             contentPadding: EdgeInsets.zero,
             onTap: () => _editTx(t),
             leading: CircleAvatar(
-              backgroundColor:
-                  categoryOf(t.type, t.category).color.withValues(alpha: 0.20),
-              child: Icon(categoryOf(t.type, t.category).icon,
-                  color: categoryOf(t.type, t.category).color, size: 20),
+              backgroundColor: categoryOf(t.type, t.category,
+                      extra: settings.expenseTypes)
+                  .color
+                  .withValues(alpha: 0.20),
+              child: Icon(
+                  categoryOf(t.type, t.category, extra: settings.expenseTypes)
+                      .icon,
+                  color: categoryOf(t.type, t.category,
+                          extra: settings.expenseTypes)
+                      .color,
+                  size: 20),
             ),
             title: Text(t.description.isEmpty ? t.category : t.description),
             subtitle: Text(_subtitle(t)),
@@ -455,7 +482,9 @@ class _HomePageState extends State<HomePage> {
       showDragHandle: true,
       builder: (_) => _TxForm(
           initialDate:
-              sameMonth ? DateTime(now.year, now.month, now.day) : _month),
+              sameMonth ? DateTime(now.year, now.month, now.day) : _month,
+          settings: _settings,
+          onSaveSettings: _persistSettings),
     );
     if (list != null) await _service.addAll(list);
   }
@@ -464,7 +493,14 @@ class _HomePageState extends State<HomePage> {
 class _TxForm extends StatefulWidget {
   final DateTime initialDate;
   final Tx? editTx;
-  const _TxForm({required this.initialDate, this.editTx});
+  final UserSettings settings;
+  final Future<void> Function(UserSettings next) onSaveSettings;
+  const _TxForm({
+    required this.initialDate,
+    required this.settings,
+    required this.onSaveSettings,
+    this.editTx,
+  });
   @override
   State<_TxForm> createState() => _TxFormState();
 }
@@ -483,11 +519,19 @@ class _TxFormState extends State<_TxForm> {
   bool _manualCategory = false;
   late DateTime _date = widget.initialDate;
   String? _error;
+  final List<ExpenseType> _created = [];
 
   bool get _isEditing => widget.editTx != null;
 
-  List<Category> get _cats =>
-      _type == TxType.expense ? expenseCategories : incomeCategories;
+  List<ExpenseType> get _types {
+    final seen = <String>{};
+    return [
+      for (final type in [...widget.settings.expenseTypes, ..._created])
+        if (seen.add(type.name.toLowerCase())) type,
+    ];
+  }
+
+  List<Category> get _cats => categoriesFor(_type, extra: _types);
 
   @override
   void initState() {
@@ -564,6 +608,27 @@ class _TxFormState extends State<_TxForm> {
     return null;
   }
 
+  Future<void> _createType() async {
+    final created = await showExpenseTypeDialog(context, [
+      ...expenseCategories.map((c) => c.name),
+      ..._types.map((t) => t.name),
+    ]);
+    if (created == null || !mounted) return;
+    final seen = <String>{};
+    final types = <ExpenseType>[
+      for (final type in [...widget.settings.expenseTypes, ..._created, created])
+        if (seen.add(type.name.toLowerCase())) type,
+    ];
+    final next = widget.settings.copyWith(expenseTypes: types);
+    await widget.onSaveSettings(next);
+    if (!mounted) return;
+    setState(() {
+      _created.add(created);
+      _category = created.name;
+      _manualCategory = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -589,7 +654,7 @@ class _TxFormState extends State<_TxForm> {
               if (_type == TxType.income && _kind == TxKind.installment) {
                 _kind = TxKind.single;
               }
-              final sug = suggestCategory(_type, _desc.text);
+              final sug = suggestCategory(_type, _desc.text, extra: _types);
               if (sug != null) _category = sug.name;
             }),
           ),
@@ -615,7 +680,7 @@ class _TxFormState extends State<_TxForm> {
                 border: OutlineInputBorder()),
             onChanged: (text) {
               if (_manualCategory) return;
-              final sug = suggestCategory(_type, text);
+              final sug = suggestCategory(_type, text, extra: _types);
               if (sug != null) setState(() => _category = sug.name);
             },
           ),
@@ -630,6 +695,12 @@ class _TxFormState extends State<_TxForm> {
                   _category = c.name;
                   _manualCategory = true;
                 }),
+              ),
+            if (_type == TxType.expense)
+              ActionChip(
+                avatar: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Novo tipo'),
+                onPressed: _createType,
               ),
           ]),
           if (!_isEditing) ...[

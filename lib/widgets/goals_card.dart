@@ -51,12 +51,17 @@ class GoalsCard extends StatelessWidget {
       );
     }
 
+    final budgets = settings.effectiveBudgets;
     final expenses = txs.where((t) => t.type == TxType.expense);
     final spent = expenses.fold(0.0, (s, t) => s + t.amount);
-    final needs = expenses
-        .where((t) => needsCategoryNames.contains(t.category))
-        .fold(0.0, (s, t) => s + t.amount);
-    final wants = spent - needs;
+    final customNames = budgets
+        .where((b) => b.kind == BudgetKind.custom)
+        .map((b) => b.name)
+        .toSet();
+    final needs = _sumMatching(
+      expenses,
+      (t) => needsCategoryNames.contains(t.category) && !customNames.contains(t.category),
+    );
     final left = income - spent;
 
     // Reserva: meses × gastos essenciais (reais do mês; se ainda não há, 50% da renda).
@@ -66,7 +71,14 @@ class GoalsCard extends StatelessWidget {
     final reserveProgress =
         target <= 0 ? 0.0 : (reserve / target).clamp(0.0, 1.0).toDouble();
     final remaining = target - reserve;
-    final monthsLeft = remaining <= 0 ? 0 : (remaining / (income * 0.2)).ceil();
+    final saveShare = budgets
+            .firstWhere((b) => b.kind == BudgetKind.save)
+            .percent /
+        100;
+    final monthlySaving = income * saveShare;
+    final monthsLeft = remaining <= 0 || monthlySaving <= 0
+        ? 0
+        : (remaining / monthlySaving).ceil();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -87,25 +99,14 @@ class GoalsCard extends StatelessWidget {
         Text('Renda média: ${_money.format(income)}',
             style: theme.textTheme.bodyMedium),
         const SizedBox(height: 16),
-        _GoalRow(
-          label: 'Essenciais (50%)',
-          hint: 'Moradia, alimentação, transporte, contas, saúde e educação',
-          value: needs,
-          goal: income * 0.5,
-        ),
-        _GoalRow(
-          label: 'Desejos (30%)',
-          hint: 'Lazer, compras e outros',
-          value: wants,
-          goal: income * 0.3,
-        ),
-        _GoalRow(
-          label: 'Guardar (20%)',
-          hint: 'O que sobra da renda vira reserva e investimentos',
-          value: left,
-          goal: income * 0.2,
-          saving: true,
-        ),
+        for (final budget in budgets)
+          _GoalRow(
+            label: '${budget.name} (${_percentLabel(budget.percent)}%)',
+            hint: _budgetHint(budget, customNames),
+            value: _budgetValue(budget, expenses, customNames, needs, left),
+            goal: income * budget.percent / 100,
+            saving: budget.kind == BudgetKind.save,
+          ),
         const Divider(height: 32),
         Text('Reserva de emergência',
             style: theme.textTheme.titleSmall
@@ -127,7 +128,7 @@ class GoalsCard extends StatelessWidget {
         Text(
           remaining <= 0
               ? 'Reserva completa: ${_money.format(reserve)} guardados.'
-              : 'Guardado: ${_money.format(reserve)}. Guardando 20% da renda, '
+              : 'Guardado: ${_money.format(reserve)}. Guardando ${_percentLabel(saveShare * 100)}% da renda, '
                   'faltam cerca de $monthsLeft ${monthsLeft == 1 ? 'mês' : 'meses'}.',
           style: theme.textTheme.bodyMedium,
         ),
@@ -141,6 +142,52 @@ class GoalsCard extends StatelessWidget {
       ]),
     );
   }
+}
+
+double _sumMatching(Iterable<Tx> expenses, bool Function(Tx) test) =>
+    expenses.where(test).fold(0.0, (s, t) => s + t.amount);
+
+double _budgetValue(
+  BudgetCategory budget,
+  Iterable<Tx> expenses,
+  Set<String> customNames,
+  double needs,
+  double left,
+) {
+  switch (budget.kind) {
+    case BudgetKind.needs:
+      return needs;
+    case BudgetKind.wants:
+      return _sumMatching(
+        expenses,
+        (t) =>
+            !needsCategoryNames.contains(t.category) &&
+            !customNames.contains(t.category),
+      );
+    case BudgetKind.save:
+      return left;
+    case BudgetKind.custom:
+      return _sumMatching(expenses, (t) => t.category == budget.name);
+  }
+}
+
+String _budgetHint(BudgetCategory budget, Set<String> customNames) {
+  switch (budget.kind) {
+    case BudgetKind.needs:
+      final names = needsCategoryNames.where((n) => !customNames.contains(n));
+      return names.join(', ');
+    case BudgetKind.wants:
+      return 'Lazer, compras e gastos que não estão em outra meta';
+    case BudgetKind.save:
+      return 'O que sobra da renda vira reserva e investimentos';
+    case BudgetKind.custom:
+      return 'Gastos lançados como ${budget.name}';
+  }
+}
+
+String _percentLabel(double percent) {
+  if (percent == percent.roundToDouble()) return percent.toStringAsFixed(0);
+  return percent.toStringAsFixed(1).replaceAll('.', ',');
 }
 
 class _GoalRow extends StatelessWidget {
@@ -233,21 +280,45 @@ class _GoalsDialog extends StatefulWidget {
   State<_GoalsDialog> createState() => _GoalsDialogState();
 }
 
+class _BudgetDraft {
+  final BudgetCategory category;
+  final TextEditingController percent;
+
+  _BudgetDraft(this.category, this.percent);
+}
+
 class _GoalsDialogState extends State<_GoalsDialog> {
   late final _income =
       TextEditingController(text: _fmt(widget.current.monthlyIncome));
   late final _reserve =
       TextEditingController(text: _fmt(widget.current.reserveSaved));
+  late final _newName = TextEditingController();
+  late final _newPercent = TextEditingController();
+  late final List<_BudgetDraft> _rows = [
+    for (final budget in widget.current.effectiveBudgets)
+      _BudgetDraft(budget, TextEditingController(text: _percentLabel(budget.percent))),
+  ];
   late int _months = widget.current.emergencyMonths;
   String? _hint;
+  String? _budgetError;
 
   String _fmt(double? v) =>
       v == null || v == 0 ? '' : v.toStringAsFixed(2).replaceAll('.', ',');
+
+  double get _totalPercent => _rows.fold(0.0, (s, r) {
+        final v = parseMoney(r.percent.text);
+        return s + (v ?? 0);
+      });
 
   @override
   void dispose() {
     _income.dispose();
     _reserve.dispose();
+    _newName.dispose();
+    _newPercent.dispose();
+    for (final row in _rows) {
+      row.percent.dispose();
+    }
     super.dispose();
   }
 
@@ -264,14 +335,68 @@ class _GoalsDialogState extends State<_GoalsDialog> {
     });
   }
 
+  void _addCategory() {
+    final name = _newName.text.trim();
+    final percent = parseMoney(_newPercent.text);
+    if (name.isEmpty) {
+      setState(() => _budgetError = 'Dê um nome para a categoria.');
+      return;
+    }
+    if (name.length > 24) {
+      setState(() => _budgetError = 'Use um nome com até 24 caracteres.');
+      return;
+    }
+    if (percent == null || percent <= 0 || percent > 100) {
+      setState(() =>
+          _budgetError = 'Informe uma porcentagem maior que zero e de até 100.');
+      return;
+    }
+    final taken = _rows.map((r) => r.category.name.toLowerCase()).toSet();
+    if (taken.contains(name.toLowerCase())) {
+      setState(() => _budgetError = 'Já existe uma categoria com esse nome.');
+      return;
+    }
+    setState(() {
+      final saveAt = _rows.indexWhere((r) => r.category.kind == BudgetKind.save);
+      final draft = _BudgetDraft(
+        BudgetCategory(name: name, percent: percent, kind: BudgetKind.custom),
+        TextEditingController(text: _percentLabel(percent)),
+      );
+      _rows.insert(saveAt < 0 ? _rows.length : saveAt, draft);
+      _newName.clear();
+      _newPercent.clear();
+      _budgetError = null;
+    });
+  }
+
+  void _removeCategory(_BudgetDraft row) {
+    final controller = row.percent;
+    setState(() {
+      _rows.remove(row);
+      _budgetError = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+  }
+
   void _save() {
     final income = parseMoney(_income.text);
+    final budgets = <BudgetCategory>[];
+    for (final row in _rows) {
+      final percent = parseMoney(row.percent.text);
+      if (percent == null || percent < 0 || percent > 100) {
+        setState(() =>
+            _budgetError = 'Cada porcentagem precisa ficar entre 0 e 100.');
+        return;
+      }
+      budgets.add(row.category.copyWith(percent: percent));
+    }
     Navigator.pop(
       context,
-      UserSettings(
-        monthlyIncome: income != null && income > 0 ? income : null,
+      widget.current.copyWith(
+        monthlyIncome: () => income != null && income > 0 ? income : null,
         emergencyMonths: _months,
         reserveSaved: parseMoney(_reserve.text) ?? 0,
+        budgets: budgets,
       ),
     );
   }
@@ -330,6 +455,90 @@ class _GoalsDialogState extends State<_GoalsDialog> {
                     prefixText: r'R$ ',
                     border: OutlineInputBorder()),
               ),
+              const SizedBox(height: 20),
+              const Text('Categorias e porcentagens',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                'A soma ideal é 100% da renda. Uma categoria nova acompanha os gastos lançados com o mesmo nome.',
+                style: small,
+              ),
+              const SizedBox(height: 12),
+              for (final row in _rows) ...[
+                Row(children: [
+                  Expanded(
+                    child: Text(row.category.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  SizedBox(
+                    width: 88,
+                    child: TextField(
+                      controller: row.percent,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() => _budgetError = null),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        suffixText: '%',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  if (row.category.kind == BudgetKind.custom)
+                    IconButton(
+                      tooltip: 'Remover',
+                      onPressed: () => _removeCategory(row),
+                      icon: const Icon(Icons.close_rounded),
+                    )
+                  else
+                    const SizedBox(width: 48),
+                ]),
+                const SizedBox(height: 8),
+              ],
+              Text(
+                'Total: ${_percentLabel(_totalPercent)}%',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: (_totalPercent - 100).abs() < 0.05
+                      ? _teal
+                      : _amber,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('goal-new-name'),
+                controller: _newName,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Nova categoria',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('goal-new-percent'),
+                controller: _newPercent,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Porcentagem',
+                  suffixText: '%',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _addCategory,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Adicionar categoria'),
+                ),
+              ),
+              if (_budgetError != null)
+                Text(_budgetError!,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ]),
       ),
       actions: [

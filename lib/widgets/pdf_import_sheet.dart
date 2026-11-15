@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/tx.dart';
+import '../models/user_settings.dart';
 import '../services/pdf_import_service.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
@@ -15,6 +16,7 @@ class ImportReviewSheet extends StatefulWidget {
   final DateTime defaultDate;
   final Future<List<ParsedItem>> Function(Uint8List) parser;
   final String title;
+  final List<ExpenseType> expenseTypes;
 
   const ImportReviewSheet({
     super.key,
@@ -22,6 +24,7 @@ class ImportReviewSheet extends StatefulWidget {
     required this.defaultDate,
     required this.parser,
     this.title = 'Importar lançamentos',
+    this.expenseTypes = const [],
   });
 
   @override
@@ -188,8 +191,7 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
 
   Widget _itemTile(int i, ThemeData theme) {
     final item = _items[i];
-    final cats =
-        item.type == TxType.expense ? expenseCategories : incomeCategories;
+    final cats = categoriesFor(item.type, extra: widget.expenseTypes);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -216,7 +218,8 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
               ),
               onChanged: (text) {
                 item.description = text;
-                final sug = suggestCategory(item.type, text);
+                final sug = suggestCategory(item.type, text,
+                    extra: widget.expenseTypes);
                 if (sug != null) item.category = sug.name;
               },
             ),

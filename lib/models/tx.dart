@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'user_settings.dart';
+
 enum TxType { income, expense }
 
 class Category {
@@ -73,16 +75,50 @@ const incomeCategories = <Category>[
   Category('Outros', Icons.more_horiz_rounded, Color(0xFF64748B)),
 ];
 
-Category categoryOf(TxType type, String name) {
+Category categoryOf(
+  TxType type,
+  String name, {
+  List<ExpenseType> extra = const [],
+}) {
   final list = type == TxType.expense ? expenseCategories : incomeCategories;
-  return list.firstWhere((c) => c.name == name, orElse: () => list.last);
+  for (final c in list) {
+    if (c.name == name) return c;
+  }
+  if (type == TxType.expense) {
+    for (final e in extra) {
+      if (e.name == name) {
+        return Category(e.name, Icons.label_rounded, Color(e.color));
+      }
+    }
+  }
+  return Category(name, Icons.more_horiz_rounded, const Color(0xFF64748B));
+}
+
+/// Tipos fixos mais os criados pelo usuário. "Outros" permanece no fim.
+List<Category> categoriesFor(
+  TxType type, {
+  List<ExpenseType> extra = const [],
+}) {
+  final base = type == TxType.expense ? expenseCategories : incomeCategories;
+  if (type != TxType.expense || extra.isEmpty) return base;
+  final known = base.map((c) => c.name.toLowerCase()).toSet();
+  final custom = [
+    for (final e in extra)
+      if (!known.contains(e.name.toLowerCase()))
+        Category(e.name, Icons.label_rounded, Color(e.color)),
+  ];
+  return [...base.sublist(0, base.length - 1), ...custom, base.last];
 }
 
 /// Sugere a categoria a partir da descrição digitada.
-Category? suggestCategory(TxType type, String description) {
+Category? suggestCategory(
+  TxType type,
+  String description, {
+  List<ExpenseType> extra = const [],
+}) {
   final text = description.toLowerCase();
   if (text.trim().isEmpty) return null;
-  final list = type == TxType.expense ? expenseCategories : incomeCategories;
+  final list = categoriesFor(type, extra: extra);
   for (final c in list) {
     if (c.keywords.any(text.contains)) return c;
   }
