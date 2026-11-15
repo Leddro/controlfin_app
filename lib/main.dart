@@ -16,7 +16,11 @@ Future<void> main() async {
 }
 
 class FinancasApp extends StatelessWidget {
-  const FinancasApp({super.key});
+  const FinancasApp({super.key, this.home});
+
+  /// Tela inicial opcional. Quando nula, usa o fluxo de autenticação do
+  /// Firebase. Permite testar o app sem inicializar o Firebase.
+  final Widget? home;
 
   @override
   Widget build(BuildContext context) {
@@ -51,16 +55,17 @@ class FinancasApp extends StatelessWidget {
           ),
         ),
       ),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-                body: Center(child: CircularProgressIndicator()));
-          }
-          return snap.hasData ? const HomePage() : const LoginPage();
-        },
-      ),
+      home: home ??
+          StreamBuilder<User?>(
+            stream: FirebaseAuth.instance.authStateChanges(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()));
+              }
+              return snap.hasData ? const HomePage() : const LoginPage();
+            },
+          ),
     );
   }
 }
