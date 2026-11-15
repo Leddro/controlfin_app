@@ -1,13 +1,14 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:csv/csv.dart';
 
-import '../models/tx.dart';
-import 'pdf_import_service.dart' show ParsedItem;
+import 'statement_parsing.dart';
 
 /// Mapeamento de cabeçalhos conhecidos para tipo de coluna.
 /// Adicione novos padrões aqui para suportar outros bancos.
 const _descHeaders = {
+  'title',
   'estabelecimento',
   'descricao',
   'descrição',
@@ -59,9 +60,9 @@ class CsvImportService {
     // Tenta UTF-8 primeiro, depois latin-1 (comum em bancos brasileiros)
     String text;
     try {
-      text = const _Utf8OrLatin1Decoder().decode(bytes);
-    } catch (_) {
-      text = String.fromCharCodes(bytes);
+      text = utf8.decode(bytes);
+    } on FormatException {
+      text = latin1.decode(bytes);
     }
 
     // Remove BOM se existir
@@ -110,31 +111,42 @@ class CsvImportService {
     final items = <ParsedItem>[];
     for (var i = headerRowIndex + 1; i < rows.length; i++) {
       final row = rows[i];
-      if (row.length <= amountCol) continue;
+      if (row.length <= amountCol || row.length <= descCol) continue;
 
       final description = row[descCol].toString().trim();
-      if (description.isEmpty || description.length < 2) continue;
+      if (description.length < 2) continue;
 
-      // Valor: se houver coluna de parcela, pode estar no formato "valor/parcelas"
-      final rawAmount = row[amountCol].toString().trim();
-      double? amount = parseMoney(rawAmount);
+      // Negativo = pagamento da fatura, estorno ou crédito: fica de fora.
+      final amount = parseStatementAmount(row[amountCol].toString());
+      if (amount == null || amount <= 0) continue;
 
-      // Tenta incorporar info de parcela na descrição
-      String? installmentInfo;
+      final date = dateCol != null && dateCol < row.length
+          ? parseStatementDate(row[dateCol].toString())
+          : null;
+
+      final clean = cleanDescription(description);
+      int? index = clean.installment;
+      int? count = clean.installments;
       if (installmentCol != null && installmentCol < row.length) {
-        final raw = row[installmentCol].toString().trim();
-        if (raw.isNotEmpty && raw != '0' && raw != '-') {
-          installmentInfo = raw;
+        final m = RegExp(r'(\d{1,2})\s*(?:/|de)\s*(\d{1,2})')
+            .firstMatch(row[installmentCol].toString());
+        if (m != null) {
+          final i = int.parse(m.group(1)!);
+          final c = int.parse(m.group(2)!);
+          if (i >= 1 && c >= 2 && i <= c) {
+            index = i;
+            count = c;
+          }
         }
       }
 
-      if (amount == null || amount <= 0) continue;
-
-      final finalDesc = installmentInfo != null
-          ? '$description (Parcela $installmentInfo)'
-          : description;
-
-      items.add(ParsedItem(description: finalDesc, amount: amount));
+      items.add(ParsedItem(
+        description: clean.text,
+        amount: amount,
+        date: date,
+        installment: index,
+        installments: count,
+      ));
     }
 
     return items;
@@ -148,34 +160,50 @@ class CsvImportService {
     final items = <ParsedItem>[];
     for (final row in rows) {
       if (row.length < 2) continue;
+      final cells = row.map((c) => c.toString().trim()).toList();
 
-      // Última coluna com número válido = valor
+      // Data: primeira célula que parece data.
+      DateTime? date;
+      for (final cell in cells) {
+        date = parseStatementDate(cell);
+        if (date != null) break;
+      }
+
+      // Valor: última célula numérica que não é data.
       double? amount;
-      int amountCol = row.length - 1;
-      for (var i = row.length - 1; i >= 0; i--) {
-        final v = parseMoney(row[i].toString());
-        if (v != null && v > 0) {
+      var amountCol = -1;
+      for (var i = cells.length - 1; i >= 0; i--) {
+        if (parseStatementDate(cells[i]) != null) continue;
+        final v = parseStatementAmount(cells[i]);
+        if (v != null) {
           amount = v;
           amountCol = i;
           break;
         }
       }
-      if (amount == null) continue;
+      if (amount == null || amount <= 0) continue;
 
-      // Primeira coluna de texto longo (> 3 chars, não é data/número) = descrição
+      // Descrição: primeira célula de texto antes do valor.
       String? description;
       for (var i = 0; i < amountCol; i++) {
-        final cell = row[i].toString().trim();
+        final cell = cells[i];
         if (cell.length >= 3 &&
-            parseMoney(cell) == null &&
-            !_looksLikeDate(cell)) {
+            parseStatementAmount(cell) == null &&
+            parseStatementDate(cell) == null) {
           description = cell;
           break;
         }
       }
       if (description == null) continue;
 
-      items.add(ParsedItem(description: description, amount: amount));
+      final clean = cleanDescription(description);
+      items.add(ParsedItem(
+        description: clean.text,
+        amount: amount,
+        date: date,
+        installment: clean.installment,
+        installments: clean.installments,
+      ));
     }
     return items;
   }
@@ -215,23 +243,4 @@ class CsvImportService {
       .replaceAll(RegExp(r'[óòõôö]'), 'o')
       .replaceAll(RegExp(r'[úùûü]'), 'u')
       .replaceAll(RegExp(r'[ç]'), 'c');
-
-  static bool _looksLikeDate(String s) =>
-      RegExp(r'^\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?$').hasMatch(s);
-}
-
-/// Decodificador que tenta UTF-8 e cai para latin-1.
-class _Utf8OrLatin1Decoder {
-  const _Utf8OrLatin1Decoder();
-
-  String decode(List<int> bytes) {
-    // Tenta detectar UTF-8 válido
-    try {
-      // ignore: unnecessary_statements
-      bytes.map((b) => b).toList(); // just access
-      return String.fromCharCodes(bytes);
-    } catch (_) {
-      return String.fromCharCodes(bytes);
-    }
-  }
 }

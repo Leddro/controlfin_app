@@ -34,7 +34,8 @@ const expenseCategories = <Category>[
     'combustivel',
     'ônibus',
     'onibus',
-    'estacionamento'
+    'estacionamento',
+    'motos',
   ]),
   Category('Contas', Icons.receipt_long_rounded, Color(0xFFC2410C), [
     'luz',
@@ -57,9 +58,18 @@ const expenseCategories = <Category>[
     'consulta'
   ]),
   Category('Educação', Icons.school_rounded, Color(0xFF0E7490),
-      ['curso', 'faculdade', 'escola', 'livro', 'mensalidade']),
+      ['curso', 'faculdade', 'escola', 'livro', 'mensalidade', 'educacao']),
   Category('Lazer', Icons.celebration_rounded, Color(0xFF65A30D),
-      ['cinema', 'netflix', 'spotify', 'viagem', 'bar', 'show', 'jogo']),
+      [
+        'cinema',
+        'netflix',
+        'spotify',
+        'viagem',
+        'bar',
+        'show',
+        'jogo',
+        'steam',
+      ]),
   Category('Compras', Icons.shopping_bag_rounded, Color(0xFFB45309),
       ['roupa', 'sapato', 'shopee', 'amazon', 'presente']),
   Category('Outros', Icons.more_horiz_rounded, Color(0xFF64748B)),

@@ -8,6 +8,11 @@ import '../models/user_settings.dart';
 import '../services/pdf_import_service.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+final _day = DateFormat('dd/MM/yyyy');
+
+/// Chave para achar lançamentos repetidos: dia e valor em centavos.
+String _dupKey(DateTime date, double amount) =>
+    '${date.year}-${date.month}-${date.day}|${(amount * 100).round()}';
 
 /// Bottom sheet que recebe os bytes de um arquivo (PDF ou CSV), extrai os
 /// lançamentos e deixa o usuário categorizar cada um antes de salvar.
@@ -18,6 +23,10 @@ class ImportReviewSheet extends StatefulWidget {
   final String title;
   final List<ExpenseType> expenseTypes;
 
+  /// Lançamentos já salvos entre duas datas (inclusive), para desmarcar o
+  /// que já foi importado antes (ex.: o PDF e o CSV da mesma fatura).
+  final Future<List<Tx>> Function(DateTime from, DateTime to)? loadExisting;
+
   const ImportReviewSheet({
     super.key,
     required this.bytes,
@@ -25,6 +34,7 @@ class ImportReviewSheet extends StatefulWidget {
     required this.parser,
     this.title = 'Importar lançamentos',
     this.expenseTypes = const [],
+    this.loadExisting,
   });
 
   @override
@@ -45,17 +55,28 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
   Future<void> _parse() async {
     try {
       final parsed = await widget.parser(widget.bytes);
+      final items = [
+        for (final item in parsed)
+          _ParsedItem(
+            description: item.description,
+            amount: item.amount,
+            date: item.date ?? widget.defaultDate,
+            installment: item.installment,
+            installments: item.installments,
+            category: suggestCategory(TxType.expense, item.description,
+                        extra: widget.expenseTypes)
+                    ?.name ??
+                'Outros',
+          ),
+      ];
+      await _markDuplicates(items);
+      if (!mounted) return;
       setState(() {
-        _items.addAll(parsed.map((item) => _ParsedItem(
-              description: item.description,
-              amount: item.amount,
-              category:
-                  suggestCategory(TxType.expense, item.description)?.name ??
-                      'Outros',
-            )));
+        _items.addAll(items);
         _loading = false;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _error =
             'Não foi possível ler o arquivo. Verifique se é um PDF ou CSV válido.';
@@ -64,15 +85,41 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
     }
   }
 
+  /// Desmarca itens com mesmo dia e valor de um lançamento já salvo.
+  Future<void> _markDuplicates(List<_ParsedItem> items) async {
+    final load = widget.loadExisting;
+    if (load == null || items.isEmpty) return;
+    final dates = items.map((i) => i.date).toList()..sort();
+    List<Tx> existing;
+    try {
+      existing = await load(dates.first, dates.last);
+    } catch (_) {
+      return; // Sem a checagem, a importação continua normal.
+    }
+    final saved = <String, int>{};
+    for (final t in existing.where((t) => t.type == TxType.expense)) {
+      final key = _dupKey(t.date, t.amount);
+      saved[key] = (saved[key] ?? 0) + 1;
+    }
+    for (final item in items) {
+      final key = _dupKey(item.date, item.amount);
+      final left = saved[key] ?? 0;
+      if (left > 0) {
+        saved[key] = left - 1;
+        item.duplicate = true;
+        item.selected = false;
+      }
+    }
+  }
+
   void _save() {
-    final selected = _items
-        .where((i) => i.selected)
-        .map((i) => i.toTx(widget.defaultDate))
-        .toList();
+    final selected =
+        _items.where((i) => i.selected).map((i) => i.toTx()).toList();
     Navigator.pop(context, selected);
   }
 
   int get _selectedCount => _items.where((i) => i.selected).length;
+  int get _duplicates => _items.where((i) => i.duplicate).length;
 
   @override
   Widget build(BuildContext context) {
@@ -127,10 +174,23 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
           child: Row(children: [
-            Text('${_items.length} lançamentos encontrados',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const Spacer(),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${_items.length} lançamentos encontrados',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  if (_duplicates > 0)
+                    Text(
+                      _duplicates == 1
+                          ? '1 já lançado e desmarcado'
+                          : '$_duplicates já lançados e desmarcados',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
             TextButton(
               onPressed: () => setState(() {
                 final allSelected = _items.every((i) => i.selected);
@@ -232,7 +292,22 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
                     : const Color(0xFFF87171),
               )),
         ]),
-        // Linha 2: tipo + categorias
+        // Linha 2: data, parcela e aviso de repetido
+        Padding(
+          padding: const EdgeInsets.only(left: 48, bottom: 4),
+          child: Text(
+            [
+              _day.format(item.date),
+              if (item.isInstallment)
+                'Parcela ${item.installment}/${item.installments}',
+              if (item.duplicate) 'Já lançado',
+            ].join(' • '),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: item.duplicate ? theme.colorScheme.tertiary : null,
+            ),
+          ),
+        ),
+        // Linha 3: categorias
         Row(children: [
           const SizedBox(width: 48),
           Expanded(
@@ -258,21 +333,34 @@ class _ImportReviewSheetState extends State<ImportReviewSheet> {
 class _ParsedItem {
   String description;
   double amount;
+  final DateTime date;
+  final int? installment;
+  final int? installments;
   TxType type = TxType.expense;
   String category;
   bool selected = true;
+  bool duplicate = false;
 
   _ParsedItem({
     required this.description,
     required this.amount,
+    required this.date,
     required this.category,
+    this.installment,
+    this.installments,
   });
 
-  Tx toTx(DateTime date) => Tx(
+  bool get isInstallment => installment != null && installments != null;
+
+  /// Só a parcela desta fatura; as próximas chegam nas próximas faturas.
+  Tx toTx() => Tx(
         type: type,
         amount: amount,
         category: category,
         description: description,
-        date: date,
+        date: DateTime(date.year, date.month, date.day),
+        kind: isInstallment ? TxKind.installment : TxKind.single,
+        index: installment ?? 1,
+        count: installments ?? 1,
       );
 }

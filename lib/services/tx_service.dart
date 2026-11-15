@@ -21,6 +21,17 @@ class TxService {
         .map((s) => s.docs.map(Tx.fromDoc).toList());
   }
 
+  /// Lançamentos de [from] até [to], inclusive.
+  Future<List<Tx>> fetchRange(DateTime from, DateTime to) async {
+    final start = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day + 1);
+    final snap = await _col
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('date', isLessThan: Timestamp.fromDate(end))
+        .get();
+    return snap.docs.map(Tx.fromDoc).toList();
+  }
+
   /// Grava vários lançamentos de uma vez (série mensal ou parcelas).
   Future<void> addAll(List<Tx> list) async {
     final batch = FirebaseFirestore.instance.batch();
