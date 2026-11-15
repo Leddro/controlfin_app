@@ -389,10 +389,10 @@ class _HomePageState extends State<HomePage> {
             contentPadding: EdgeInsets.zero,
             onTap: () => _editTx(t),
             leading: CircleAvatar(
-              backgroundColor: categoryOf(t.type, t.category,
-                      extra: settings.expenseTypes)
-                  .color
-                  .withValues(alpha: 0.20),
+              backgroundColor:
+                  categoryOf(t.type, t.category, extra: settings.expenseTypes)
+                      .color
+                      .withValues(alpha: 0.20),
               child: Icon(
                   categoryOf(t.type, t.category, extra: settings.expenseTypes)
                       .icon,
@@ -609,14 +609,22 @@ class _TxFormState extends State<_TxForm> {
   }
 
   Future<void> _createType() async {
-    final created = await showExpenseTypeDialog(context, [
-      ...expenseCategories.map((c) => c.name),
-      ..._types.map((t) => t.name),
-    ]);
+    final created = await showExpenseTypeDialog(
+      context,
+      [
+        ...expenseCategories.map((c) => c.name),
+        ..._types.map((t) => t.name),
+      ],
+      budgets: widget.settings.effectiveBudgets,
+    );
     if (created == null || !mounted) return;
     final seen = <String>{};
     final types = <ExpenseType>[
-      for (final type in [...widget.settings.expenseTypes, ..._created, created])
+      for (final type in [
+        ...widget.settings.expenseTypes,
+        ..._created,
+        created
+      ])
         if (seen.add(type.name.toLowerCase())) type,
     ];
     final next = widget.settings.copyWith(expenseTypes: types);

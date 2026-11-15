@@ -17,20 +17,36 @@ const expenseTypePalette = <int>[
   0xFF64748B,
 ];
 
+/// Primeira cor da paleta que nenhum tipo usa (ou a próxima, em rodízio).
+int nextExpenseTypeColor(List<ExpenseType> types) {
+  final used = types.map((t) => t.color).toSet();
+  for (final color in expenseTypePalette) {
+    if (!used.contains(color)) return color;
+  }
+  return expenseTypePalette[types.length % expenseTypePalette.length];
+}
+
+/// Pede nome, cor e a meta em que o novo tipo de gasto conta.
+/// [budgets] são as metas do usuário; "Guardar" não aparece como opção.
 Future<ExpenseType?> showExpenseTypeDialog(
   BuildContext context,
-  List<String> takenNames,
-) {
+  List<String> takenNames, {
+  List<BudgetCategory> budgets = BudgetCategory.defaults,
+}) {
   return showDialog<ExpenseType>(
     context: context,
-    builder: (_) => _ExpenseTypeDialog(takenNames: takenNames),
+    builder: (_) => _ExpenseTypeDialog(
+      takenNames: takenNames,
+      goals: spendingGoals(budgets),
+    ),
   );
 }
 
 class _ExpenseTypeDialog extends StatefulWidget {
   final List<String> takenNames;
+  final List<BudgetCategory> goals;
 
-  const _ExpenseTypeDialog({required this.takenNames});
+  const _ExpenseTypeDialog({required this.takenNames, required this.goals});
 
   @override
   State<_ExpenseTypeDialog> createState() => _ExpenseTypeDialogState();
@@ -39,6 +55,10 @@ class _ExpenseTypeDialog extends StatefulWidget {
 class _ExpenseTypeDialogState extends State<_ExpenseTypeDialog> {
   final _name = TextEditingController();
   int _color = expenseTypePalette.first;
+  late String _goal = widget.goals
+      .firstWhere((b) => b.kind == BudgetKind.wants,
+          orElse: () => widget.goals.first)
+      .name;
   String? _error;
 
   @override
@@ -62,7 +82,7 @@ class _ExpenseTypeDialogState extends State<_ExpenseTypeDialog> {
       setState(() => _error = 'Esse tipo de gasto já existe.');
       return;
     }
-    Navigator.pop(context, ExpenseType(name: name, color: _color));
+    Navigator.pop(context, ExpenseType(name: name, color: _color, goal: _goal));
   }
 
   @override
@@ -89,6 +109,7 @@ class _ExpenseTypeDialogState extends State<_ExpenseTypeDialog> {
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final color in expenseTypePalette)
               InkWell(
+                key: Key('expense-type-color-$color'),
                 onTap: () => setState(() => _color = color),
                 customBorder: const CircleBorder(),
                 child: Container(
@@ -98,11 +119,30 @@ class _ExpenseTypeDialogState extends State<_ExpenseTypeDialog> {
                     color: Color(color),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: _color == color ? Colors.white : Colors.transparent,
+                      color:
+                          _color == color ? Colors.white : Colors.transparent,
                       width: 3,
                     ),
                   ),
                 ),
+              ),
+          ]),
+          const SizedBox(height: 16),
+          const Text('Conta em qual meta?',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(
+            'Ex.: ração do pet pode ser Essenciais; brinquedos, Desejos.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final goal in widget.goals)
+              ChoiceChip(
+                key: Key('expense-type-goal-${goal.name}'),
+                label: Text(goal.name),
+                selected: _goal == goal.name,
+                onSelected: (_) => setState(() => _goal = goal.name),
               ),
           ]),
           if (_error != null) ...[

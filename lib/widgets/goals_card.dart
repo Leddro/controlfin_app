@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/tx.dart';
 import '../models/user_settings.dart';
+import 'expense_type_dialog.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -54,14 +55,15 @@ class GoalsCard extends StatelessWidget {
     final budgets = settings.effectiveBudgets;
     final expenses = txs.where((t) => t.type == TxType.expense);
     final spent = expenses.fold(0.0, (s, t) => s + t.amount);
-    final customNames = budgets
-        .where((b) => b.kind == BudgetKind.custom)
-        .map((b) => b.name)
-        .toSet();
-    final needs = _sumMatching(
-      expenses,
-      (t) => needsCategoryNames.contains(t.category) && !customNames.contains(t.category),
-    );
+    // Quanto foi gasto em cada meta, conforme a meta de cada tipo de gasto.
+    final byGoal = <String, double>{};
+    for (final t in expenses) {
+      final goal = settings.budgetOf(t.category).name;
+      byGoal[goal] = (byGoal[goal] ?? 0) + t.amount;
+    }
+    final needsName =
+        budgets.firstWhere((b) => b.kind == BudgetKind.needs).name;
+    final needs = byGoal[needsName] ?? 0;
     final left = income - spent;
 
     // Reserva: meses × gastos essenciais (reais do mês; se ainda não há, 50% da renda).
@@ -71,10 +73,8 @@ class GoalsCard extends StatelessWidget {
     final reserveProgress =
         target <= 0 ? 0.0 : (reserve / target).clamp(0.0, 1.0).toDouble();
     final remaining = target - reserve;
-    final saveShare = budgets
-            .firstWhere((b) => b.kind == BudgetKind.save)
-            .percent /
-        100;
+    final saveShare =
+        budgets.firstWhere((b) => b.kind == BudgetKind.save).percent / 100;
     final monthlySaving = income * saveShare;
     final monthsLeft = remaining <= 0 || monthlySaving <= 0
         ? 0
@@ -102,8 +102,10 @@ class GoalsCard extends StatelessWidget {
         for (final budget in budgets)
           _GoalRow(
             label: '${budget.name} (${_percentLabel(budget.percent)}%)',
-            hint: _budgetHint(budget, customNames),
-            value: _budgetValue(budget, expenses, customNames, needs, left),
+            hint: _budgetHint(budget, settings),
+            value: budget.kind == BudgetKind.save
+                ? left
+                : byGoal[budget.name] ?? 0,
             goal: income * budget.percent / 100,
             saving: budget.kind == BudgetKind.save,
           ),
@@ -144,45 +146,23 @@ class GoalsCard extends StatelessWidget {
   }
 }
 
-double _sumMatching(Iterable<Tx> expenses, bool Function(Tx) test) =>
-    expenses.where(test).fold(0.0, (s, t) => s + t.amount);
-
-double _budgetValue(
-  BudgetCategory budget,
-  Iterable<Tx> expenses,
-  Set<String> customNames,
-  double needs,
-  double left,
-) {
-  switch (budget.kind) {
-    case BudgetKind.needs:
-      return needs;
-    case BudgetKind.wants:
-      return _sumMatching(
-        expenses,
-        (t) =>
-            !needsCategoryNames.contains(t.category) &&
-            !customNames.contains(t.category),
-      );
-    case BudgetKind.save:
-      return left;
-    case BudgetKind.custom:
-      return _sumMatching(expenses, (t) => t.category == budget.name);
+String _budgetHint(BudgetCategory budget, UserSettings settings) {
+  if (budget.kind == BudgetKind.save) {
+    return 'O que sobra da renda vira reserva e investimentos';
   }
-}
-
-String _budgetHint(BudgetCategory budget, Set<String> customNames) {
-  switch (budget.kind) {
-    case BudgetKind.needs:
-      final names = needsCategoryNames.where((n) => !customNames.contains(n));
-      return names.join(', ');
-    case BudgetKind.wants:
-      return 'Lazer, compras e gastos que não estão em outra meta';
-    case BudgetKind.save:
-      return 'O que sobra da renda vira reserva e investimentos';
-    case BudgetKind.custom:
-      return 'Gastos lançados como ${budget.name}';
+  bool here(String category) => settings.budgetOf(category).name == budget.name;
+  final fixed = expenseCategories.map((c) => c.name).toSet();
+  final names = [
+    for (final name in fixed)
+      if (name != 'Outros' && here(name)) name,
+    for (final type in settings.expenseTypes)
+      if (!fixed.contains(type.name) && here(type.name)) type.name,
+  ];
+  if (budget.kind == BudgetKind.wants) {
+    names.add('o que não está em outra meta');
   }
+  if (names.isEmpty) return 'Nenhum tipo de gasto ligado a esta meta';
+  return names.join(', ');
 }
 
 String _percentLabel(double percent) {
@@ -296,8 +276,12 @@ class _GoalsDialogState extends State<_GoalsDialog> {
   late final _newPercent = TextEditingController();
   late final List<_BudgetDraft> _rows = [
     for (final budget in widget.current.effectiveBudgets)
-      _BudgetDraft(budget, TextEditingController(text: _percentLabel(budget.percent))),
+      _BudgetDraft(
+          budget, TextEditingController(text: _percentLabel(budget.percent))),
   ];
+  late final List<ExpenseType> _types = [...widget.current.expenseTypes];
+  // Tipos criados junto com uma categoria nesta edição (somem se ela for removida).
+  final Set<String> _autoCreated = {};
   late int _months = widget.current.emergencyMonths;
   String? _hint;
   String? _budgetError;
@@ -347,8 +331,8 @@ class _GoalsDialogState extends State<_GoalsDialog> {
       return;
     }
     if (percent == null || percent <= 0 || percent > 100) {
-      setState(() =>
-          _budgetError = 'Informe uma porcentagem maior que zero e de até 100.');
+      setState(() => _budgetError =
+          'Informe uma porcentagem maior que zero e de até 100.');
       return;
     }
     final taken = _rows.map((r) => r.category.name.toLowerCase()).toSet();
@@ -357,22 +341,52 @@ class _GoalsDialogState extends State<_GoalsDialog> {
       return;
     }
     setState(() {
-      final saveAt = _rows.indexWhere((r) => r.category.kind == BudgetKind.save);
+      final saveAt =
+          _rows.indexWhere((r) => r.category.kind == BudgetKind.save);
       final draft = _BudgetDraft(
         BudgetCategory(name: name, percent: percent, kind: BudgetKind.custom),
         TextEditingController(text: _percentLabel(percent)),
       );
       _rows.insert(saveAt < 0 ? _rows.length : saveAt, draft);
+      _linkType(name);
       _newName.clear();
       _newPercent.clear();
       _budgetError = null;
     });
   }
 
+  /// Liga (ou cria) o tipo de gasto com o mesmo nome da categoria nova.
+  void _linkType(String name) {
+    final key = name.toLowerCase();
+    final i = _types.indexWhere((t) => t.name.toLowerCase() == key);
+    if (i >= 0) {
+      _types[i] = _types[i].copyWith(goal: () => name);
+    } else if (!expenseCategories.any((c) => c.name.toLowerCase() == key)) {
+      _types.add(ExpenseType(
+        name: name,
+        color: nextExpenseTypeColor(_types),
+        goal: name,
+      ));
+      _autoCreated.add(key);
+    }
+  }
+
+  List<BudgetCategory> get _draftBudgets =>
+      _rows.map((r) => r.category).toList();
+
   void _removeCategory(_BudgetDraft row) {
     final controller = row.percent;
+    final key = row.category.name.toLowerCase();
     setState(() {
       _rows.remove(row);
+      if (_autoCreated.remove(key)) {
+        _types.removeWhere((t) => t.name.toLowerCase() == key);
+      }
+      for (var i = 0; i < _types.length; i++) {
+        if (_types[i].goal?.toLowerCase() == key) {
+          _types[i] = _types[i].copyWith(goal: () => null);
+        }
+      }
       _budgetError = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
@@ -397,6 +411,7 @@ class _GoalsDialogState extends State<_GoalsDialog> {
         emergencyMonths: _months,
         reserveSaved: parseMoney(_reserve.text) ?? 0,
         budgets: budgets,
+        expenseTypes: _types,
       ),
     );
   }
@@ -499,9 +514,7 @@ class _GoalsDialogState extends State<_GoalsDialog> {
                 'Total: ${_percentLabel(_totalPercent)}%',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: (_totalPercent - 100).abs() < 0.05
-                      ? _teal
-                      : _amber,
+                  color: (_totalPercent - 100).abs() < 0.05 ? _teal : _amber,
                 ),
               ),
               const SizedBox(height: 12),
@@ -538,7 +551,45 @@ class _GoalsDialogState extends State<_GoalsDialog> {
               ),
               if (_budgetError != null)
                 Text(_budgetError!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error)),
+              if (_types.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text('Tipos de gasto',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text('Escolha em qual meta cada tipo de gasto conta.',
+                    style: small),
+                const SizedBox(height: 8),
+                for (var i = 0; i < _types.length; i++)
+                  Row(children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Color(_types[i].color),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(_types[i].name)),
+                    DropdownButton<String>(
+                      key: Key('type-goal-${_types[i].name}'),
+                      value:
+                          goalFor(_draftBudgets, _types, _types[i].name).name,
+                      items: [
+                        for (final goal in spendingGoals(_draftBudgets))
+                          DropdownMenuItem(
+                              value: goal.name, child: Text(goal.name)),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() =>
+                            _types[i] = _types[i].copyWith(goal: () => value));
+                      },
+                    ),
+                  ]),
+              ],
             ]),
       ),
       actions: [

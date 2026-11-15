@@ -1,3 +1,5 @@
+import 'tx.dart';
+
 enum BudgetKind { needs, wants, save, custom }
 
 class BudgetCategory {
@@ -49,16 +51,30 @@ class ExpenseType {
   final String name;
   final int color;
 
-  const ExpenseType({required this.name, required this.color});
+  /// Nome da meta em que esse gasto conta (ex.: "Essenciais", "Desejos" ou
+  /// uma categoria criada). Nulo ou meta inexistente: conta em Desejos.
+  final String? goal;
+
+  const ExpenseType({required this.name, required this.color, this.goal});
+
+  ExpenseType copyWith({String? Function()? goal}) => ExpenseType(
+        name: name,
+        color: color,
+        goal: goal != null ? goal() : this.goal,
+      );
 
   factory ExpenseType.fromMap(Map<String, dynamic> m) => ExpenseType(
         name: (m['name'] as String?)?.trim() ?? '',
         color: _color(m['color']),
+        goal: (m['goal'] as String?)?.trim().isNotEmpty == true
+            ? (m['goal'] as String).trim()
+            : null,
       );
 
   Map<String, dynamic> toMap() => {
         'name': name,
         'color': color.toRadixString(16).padLeft(8, '0'),
+        if (goal != null) 'goal': goal,
       };
 }
 
@@ -93,6 +109,13 @@ class UserSettings {
     ];
     return ordered;
   }
+
+  /// Meta em que um gasto da categoria [category] é contado.
+  ///
+  /// Ordem: meta escolhida no tipo de gasto; meta criada com o mesmo nome;
+  /// Essenciais para as categorias fixas essenciais; Desejos para o resto.
+  BudgetCategory budgetOf(String category) =>
+      goalFor(effectiveBudgets, expenseTypes, category);
 
   UserSettings copyWith({
     double? Function()? monthlyIncome,
@@ -131,6 +154,41 @@ class UserSettings {
         'budgets': budgets.map((b) => b.toMap()).toList(),
         'expenseTypes': expenseTypes.map((e) => e.toMap()).toList(),
       };
+}
+
+/// Metas em que um gasto pode contar (todas menos "Guardar", que é a sobra).
+List<BudgetCategory> spendingGoals(List<BudgetCategory> budgets) =>
+    budgets.where((b) => b.kind != BudgetKind.save).toList();
+
+/// Mesma regra de [UserSettings.budgetOf], para listas ainda em edição.
+BudgetCategory goalFor(
+  List<BudgetCategory> budgets,
+  List<ExpenseType> types,
+  String category,
+) {
+  final goals = spendingGoals(budgets);
+  BudgetCategory? named(String? name) {
+    if (name == null) return null;
+    final key = name.toLowerCase();
+    for (final b in goals) {
+      if (b.name.toLowerCase() == key) return b;
+    }
+    return null;
+  }
+
+  final key = category.toLowerCase();
+  for (final type in types) {
+    if (type.name.toLowerCase() != key) continue;
+    final chosen = named(type.goal);
+    if (chosen != null) return chosen;
+    break;
+  }
+  final custom = named(category);
+  if (custom != null && custom.kind == BudgetKind.custom) return custom;
+  final kind = needsCategoryNames.contains(category)
+      ? BudgetKind.needs
+      : BudgetKind.wants;
+  return goals.firstWhere((b) => b.kind == kind);
 }
 
 int _color(Object? raw) {
