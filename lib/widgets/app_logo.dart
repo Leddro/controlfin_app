@@ -12,7 +12,7 @@ class AppLogo extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _LogoPainter()),
+      child: const CustomPaint(painter: AppLogoPainter()),
     );
   }
 }
@@ -38,18 +38,29 @@ class AppLogoButton extends StatelessWidget {
   }
 }
 
-class _LogoPainter extends CustomPainter {
+/// Desenho da logo. Também usado para gerar o ícone do app
+/// (test/tool/render_app_icon_test.dart).
+class AppLogoPainter extends CustomPainter {
+  /// Fundo escuro arredondado. Desligado na camada da frente do ícone
+  /// adaptável do Android, que recebe a cor de fundo à parte.
+  final bool background;
+
+  const AppLogoPainter({this.background = true});
+
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
 
     // Fundo preto com bordas arredondadas
-    final bgPaint = Paint()..color = const Color(0xFF111111);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), Radius.circular(w * 0.19)),
-      bgPaint,
-    );
+    if (background) {
+      final bgPaint = Paint()..color = const Color(0xFF111111);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(0, 0, w, h), Radius.circular(w * 0.19)),
+        bgPaint,
+      );
+    }
 
     // Gradient dourado
     final goldShader = const LinearGradient(
@@ -64,8 +75,8 @@ class _LogoPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     // "C" arc (abertura à direita, entre ~40° e ~320°)
-    const startAngle = -2.44; // ~-140°
-    const sweepAngle = 4.89;  // ~280°
+    const startAngle = 0.70; // ~40°, ponta de baixo
+    const sweepAngle = 4.89; // ~280°, passando pela esquerda até ~320°
     canvas.drawArc(
       Rect.fromCenter(
         center: Offset(w * 0.44, h * 0.50),
@@ -126,5 +137,5 @@ class _LogoPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LogoPainter _) => false;
+  bool shouldRepaint(AppLogoPainter old) => old.background != background;
 }

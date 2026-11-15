@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../models/tx.dart';
 import '../models/user_settings.dart';
-import '../services/auth_service.dart';
 import '../services/csv_import_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
@@ -14,11 +13,15 @@ import '../widgets/app_logo.dart';
 import '../widgets/expense_type_dialog.dart';
 import '../widgets/goals_card.dart';
 import '../widgets/pdf_import_sheet.dart';
+import '../widgets/user_avatar.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  /// Chamado ao tocar na foto do usuário (abre a aba Conta).
+  final VoidCallback? onOpenAccount;
+
+  const HomePage({super.key, this.onOpenAccount});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -58,10 +61,16 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(value: 'csv', child: Text('Importar CSV')),
             ],
           ),
-          IconButton(
-            tooltip: 'Sair',
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: AuthService().signOut,
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 12),
+            child: Tooltip(
+              message: 'Conta',
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onOpenAccount,
+                child: const UserAvatar(radius: 17),
+              ),
+            ),
           ),
         ],
       ),

@@ -6,16 +6,27 @@ class AuthService {
   Future<void> signIn(String email, String password) =>
       _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
 
-  Future<void> signUp(String email, String password) =>
-      _auth.createUserWithEmailAndPassword(email: email.trim(), password: password);
+  Future<void> signUp(String email, String password) => _auth
+      .createUserWithEmailAndPassword(email: email.trim(), password: password);
 
   /// Funciona na web (popup) e em Android/iOS sem pacote extra.
-  Future<void> signInWithGoogle() => _auth.signInWithProvider(GoogleAuthProvider());
+  Future<void> signInWithGoogle() =>
+      _auth.signInWithProvider(GoogleAuthProvider());
 
   Future<void> resetPassword(String email) =>
       _auth.sendPasswordResetEmail(email: email.trim());
 
   Future<void> signOut() => _auth.signOut();
+
+  /// Emite o usuário de novo quando nome ou foto mudam.
+  Stream<User?> userChanges() => _auth.userChanges();
+
+  Future<void> updateName(String name) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await user.updateDisplayName(name.trim().isEmpty ? null : name.trim());
+    await user.reload();
+  }
 
   static String friendlyError(Object e) {
     if (e is FirebaseAuthException) {

@@ -5,7 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart'; // gerado pelo comando `flutterfire configure`
-import 'pages/home_page.dart';
+import 'pages/main_shell.dart';
 import 'pages/login_page.dart';
 
 Future<void> main() async {
@@ -63,7 +63,7 @@ class FinancasApp extends StatelessWidget {
                 return const Scaffold(
                     body: Center(child: CircularProgressIndicator()));
               }
-              return snap.hasData ? const HomePage() : const LoginPage();
+              return snap.hasData ? const MainShell() : const LoginPage();
             },
           ),
     );
