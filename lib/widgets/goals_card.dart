@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/market/contribution.dart';
 import '../models/tx.dart';
 import '../models/user_settings.dart';
 import 'expense_type_dialog.dart';
@@ -22,6 +23,10 @@ class GoalsCard extends StatelessWidget {
   /// Meta usada no filtro dos lançamentos, destacada no cartão.
   final String? selectedGoal;
 
+  /// Média mensal dos gastos essenciais dos últimos meses fechados, para a
+  /// meta da reserva (0: usa os gastos deste mês).
+  final double essentialAverage;
+
   const GoalsCard({
     super.key,
     required this.settings,
@@ -29,6 +34,7 @@ class GoalsCard extends StatelessWidget {
     required this.onEdit,
     this.onSelectGoal,
     this.selectedGoal,
+    this.essentialAverage = 0,
   });
 
   @override
@@ -75,12 +81,17 @@ class GoalsCard extends StatelessWidget {
     final needs = byGoal[needsName] ?? 0;
     final left = income - spent;
 
-    // Reserva: meses × gastos essenciais (reais do mês; se ainda não há, 50% da renda).
-    final base = needs > 0 ? needs : income * 0.5;
-    final target = base * settings.emergencyMonths;
-    final reserve = settings.reserveSaved;
-    final reserveProgress =
-        target <= 0 ? 0.0 : (reserve / target).clamp(0.0, 1.0).toDouble();
+    // Reserva: meses × gasto essencial mensal (média dos últimos meses; sem
+    // histórico, o deste mês; sem gastos, 50% da renda). Mesma regra do
+    // aporte na aba Investimentos.
+    final status = reserveStatus(
+      settings,
+      essentialAverage: essentialAverage,
+      currentMonthNeeds: needs,
+    );
+    final target = status.target;
+    final reserve = status.saved;
+    final reserveProgress = status.progress;
     final remaining = target - reserve;
     final saveShare =
         budgets.firstWhere((b) => b.kind == BudgetKind.save).percent / 100;
@@ -131,7 +142,8 @@ class GoalsCard extends StatelessWidget {
                 ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
         Text(
-            'Meta: ${_money.format(target)} (${settings.emergencyMonths} meses de gastos essenciais)'),
+            'Meta: ${_money.format(target)} (${settings.emergencyMonths} meses '
+            'de ${_money.format(status.monthlyBase)}, pela ${status.baseSource})'),
         const SizedBox(height: 10),
         ClipRRect(
           borderRadius: BorderRadius.circular(4),

@@ -9,6 +9,7 @@ import '../services/csv_import_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
+import '../models/market/contribution.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/expense_type_dialog.dart';
 import '../widgets/goals_card.dart';
@@ -43,6 +44,14 @@ class _HomePageState extends State<HomePage> {
   // Guardados para não reabrir a conexão com o Firestore a cada setState.
   late final Stream<UserSettings> _settingsStream = _settingsService.watch();
   late Stream<List<Tx>> _txStream = _service.watchMonth(_month);
+
+  /// Últimos 3 meses fechados (a partir de hoje), para a meta da reserva.
+  late final Future<List<Tx>> _history = () {
+    final now = DateTime.now();
+    final thisMonth = DateTime(now.year, now.month);
+    return _service.fetchRange(DateTime(now.year, now.month - 3),
+        thisMonth.subtract(const Duration(days: 1)));
+  }();
 
   void _shift(int delta) => setState(() {
         _month = DateTime(_month.year, _month.month + delta);
@@ -153,12 +162,17 @@ class _HomePageState extends State<HomePage> {
                           const SizedBox(height: 8),
                           _summary(txs),
                           const SizedBox(height: 16),
-                          GoalsCard(
-                            settings: settings,
-                            txs: txs,
-                            onEdit: () => _editGoals(settings),
-                            onSelectGoal: _showGoal,
-                            selectedGoal: _filter,
+                          FutureBuilder<List<Tx>>(
+                            future: _history,
+                            builder: (context, history) => GoalsCard(
+                              settings: settings,
+                              txs: txs,
+                              onEdit: () => _editGoals(settings),
+                              onSelectGoal: _showGoal,
+                              selectedGoal: _filter,
+                              essentialAverage: essentialMonthlyAverage(
+                                  history.data ?? const [], settings),
+                            ),
                           ),
                           const SizedBox(height: 16),
                           if (txs.isEmpty)

@@ -282,10 +282,9 @@ class InvestorProfile {
       return 'Você vai precisar do dinheiro em menos de 1 ano, sem tempo '
           'para esperar uma queda passar.';
     }
-    if (_a('reserve') == 0) {
-      return 'Você ainda não tem reserva de emergência. O primeiro passo é '
-          'montá-la antes de correr riscos.';
-    }
+    // A falta de reserva pesa na capacidade de risco, mas não trava o
+    // perfil: a aba Investimentos cuida de montar a reserva junto com os
+    // investimentos.
     return null;
   }
 

@@ -1,0 +1,39 @@
+# Robô diário dos dados de mercado (tool/update_market.dart).
+# Grava na coleção "market" do Firestore; o app só lê de lá.
+# Chaves nos Secrets do repositório: ALPHA_VANTAGE_KEY, BRAPI_TOKEN e
+# FIREBASE_SERVICE_ACCOUNT (JSON da conta de serviço do Firebase).
+name: Dados de mercado
+
+on:
+  schedule:
+    # 21h30 UTC = 18h30 em Brasília, depois do fechamento da B3.
+    - cron: '30 21 * * *'
+  # Botão "Run workflow" na aba Actions, para rodar na hora.
+  workflow_dispatch:
+
+concurrency:
+  group: market
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      - name: Dependências
+        run: flutter pub get
+
+      - name: Coletar e gravar
+        run: dart run tool/update_market.dart
+        env:
+          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
+          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

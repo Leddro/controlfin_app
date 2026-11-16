@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'account_page.dart';
 import 'home_page.dart';
-import 'invest_page.dart';
+import 'investments_page.dart';
+import 'investor_profile_page.dart';
 
-/// Estrutura principal: Início, Investimentos e Conta no menu do rodapé.
+/// Estrutura principal: Início, Investimentos, Perfil de investidor e Conta.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -13,20 +14,24 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _index = 0;
+  static const _home = 0, _profile = 2, _account = 3;
+  int _index = _home;
+
+  void _go(int i) => setState(() => _index = i);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       // IndexedStack mantém o estado de cada aba ao trocar de aba.
       body: IndexedStack(index: _index, children: [
-        HomePage(onOpenAccount: () => setState(() => _index = 2)),
-        const InvestPage(),
+        HomePage(onOpenAccount: () => _go(_account)),
+        InvestmentsPage(onOpenProfile: () => _go(_profile)),
+        const InvestorProfilePage(),
         const AccountPage(),
       ]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: _go,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -37,6 +42,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.trending_up_outlined),
             selectedIcon: Icon(Icons.trending_up_rounded),
             label: 'Investimentos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights_rounded),
+            label: 'Perfil',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),

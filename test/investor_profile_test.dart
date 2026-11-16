@@ -1,5 +1,5 @@
 import 'package:financas_app/models/investor_profile.dart';
-import 'package:financas_app/pages/invest_page.dart';
+import 'package:financas_app/pages/investor_profile_page.dart';
 import 'package:financas_app/widgets/investor_quiz.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,10 +45,12 @@ void main() {
       expect(p.type, InvestorType.aggressive);
     });
 
-    test('sem reserva de emergência fica conservador', () {
-      final p = profileWith({'reserve': 0});
-      expect(p.type, InvestorType.conservative);
-      expect(p.limitingFactor, contains('reserva de emergência'));
+    test('sem reserva: pesa na capacidade, mas não trava o perfil', () {
+      final com = profileWith({});
+      final sem = profileWith({'reserve': 0});
+      expect(sem.capacity, lessThan(com.capacity));
+      expect(sem.conservativeCap, isNull);
+      expect(sem.type, isNot(InvestorType.conservative));
     });
 
     test('objetivo de reserva ou prazo curto fica conservador', () {

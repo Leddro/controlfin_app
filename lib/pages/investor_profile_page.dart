@@ -7,14 +7,14 @@ import '../widgets/investor_quiz.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
 
-class InvestPage extends StatefulWidget {
-  const InvestPage({super.key});
+class InvestorProfilePage extends StatefulWidget {
+  const InvestorProfilePage({super.key});
 
   @override
-  State<InvestPage> createState() => _InvestPageState();
+  State<InvestorProfilePage> createState() => _InvestorProfilePageState();
 }
 
-class _InvestPageState extends State<InvestPage> {
+class _InvestorProfilePageState extends State<InvestorProfilePage> {
   final _service = InvestorProfileService();
   late final _stream = _service.watch();
   bool _quizOpen = false;
@@ -42,7 +42,7 @@ class _InvestPageState extends State<InvestPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Investimentos')),
+      appBar: AppBar(title: const Text('Perfil de investidor')),
       body: StreamBuilder<InvestorProfile?>(
         stream: _stream,
         builder: (context, snap) {
@@ -147,8 +147,11 @@ class InvestorProfileView extends StatelessWidget {
   final InvestorProfile profile;
   final VoidCallback onRedo;
 
-  const InvestorProfileView(
-      {super.key, required this.profile, required this.onRedo});
+  const InvestorProfileView({
+    super.key,
+    required this.profile,
+    required this.onRedo,
+  });
 
   @override
   Widget build(BuildContext context) {

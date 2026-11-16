@@ -51,3 +51,7 @@ app.*.map.json
 android/key.properties
 *.jks
 *.keystore
+
+# Chaves das APIs (Alpha Vantage, brapi), só para rodar o robô
+# tool/update_market.dart no PC. Modelo em tool/env.example.json.
+tool/env.json
