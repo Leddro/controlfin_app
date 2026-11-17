@@ -1,20 +1,30 @@
+import 'dart:typed_data';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/credit_card.dart';
 import '../models/tx.dart';
 import '../models/user_settings.dart';
+import '../services/card_service.dart';
 import '../services/csv_import_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../models/market/contribution.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/card_editor_sheet.dart';
+import '../widgets/card_widgets.dart';
 import '../widgets/expense_type_dialog.dart';
 import '../widgets/goals_card.dart';
+import '../widgets/invoices_card.dart';
 import '../widgets/pdf_import_sheet.dart';
+import '../widgets/summary_card.dart';
+import '../widgets/upcoming_card.dart';
 import '../widgets/user_avatar.dart';
+import 'cards_page.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -31,34 +41,41 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _service = TxService();
   final _settingsService = SettingsService();
+  final _cardService = CardService();
   UserSettings _settings = const UserSettings();
+  List<CreditCard> _cards = const [];
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   int? _touched;
 
-  /// Filtro da lista: nulo = todos, [_incomeFilter] = ganhos, ou o nome de
-  /// uma meta de gasto.
+  /// Filtro da lista: nulo = todos, [_incomeFilter] = ganhos,
+  /// [_debitFilter] / [_creditFilter] = forma de pagamento, `card:<id>` = um
+  /// cartão, ou o nome de uma meta de gasto.
   String? _filter;
   static const _incomeFilter = '__ganhos__';
+  static const _debitFilter = '__debito__';
+  static const _creditFilter = '__credito__';
+  static const _cardPrefix = 'card:';
   final _listKey = GlobalKey();
 
   // Guardados para não reabrir a conexão com o Firestore a cada setState.
   late final Stream<UserSettings> _settingsStream = _settingsService.watch();
-  late Stream<List<Tx>> _txStream = _service.watchMonth(_month);
+  late final Stream<List<CreditCard>> _cardsStream = _cardService.watch();
+  late Stream<MonthView> _txStream = _service.watchMonthView(_month);
 
   /// Últimos 3 meses fechados (a partir de hoje), para a meta da reserva.
   late final Future<List<Tx>> _history = () {
     final now = DateTime.now();
     final thisMonth = DateTime(now.year, now.month);
-    return _service.fetchRange(DateTime(now.year, now.month - 3),
+    return _service.fetchCashRange(DateTime(now.year, now.month - 3),
         thisMonth.subtract(const Duration(days: 1)));
   }();
 
   void _shift(int delta) => setState(() {
         _month = DateTime(_month.year, _month.month + delta);
-        _txStream = _service.watchMonth(_month);
+        _txStream = _service.watchMonthView(_month);
       });
 
-  /// Aplica o filtro da meta e rola até a lista de lançamentos.
+  /// Aplica o filtro (meta ou cartão) e rola até a lista de lançamentos.
   void _showGoal(String goal) {
     setState(() => _filter = goal);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -137,54 +154,91 @@ class _HomePageState extends State<HomePage> {
         builder: (context, settingsSnap) {
           final settings = settingsSnap.data ?? _settings;
           _settings = settings;
-          return StreamBuilder<List<Tx>>(
-            stream: _txStream,
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return const Center(
-                    child: Text('Não foi possível carregar seus lançamentos.'));
-              }
-              if (!snap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final txs = snap.data!;
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  // Coluna inteira (não ListView) para a lista existir e o
-                  // toque numa meta conseguir rolar até ela.
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _monthSelector(),
-                          const SizedBox(height: 8),
-                          _summary(txs),
-                          const SizedBox(height: 16),
-                          FutureBuilder<List<Tx>>(
-                            future: _history,
-                            builder: (context, history) => GoalsCard(
-                              settings: settings,
-                              txs: txs,
-                              onEdit: () => _editGoals(settings),
-                              onSelectGoal: _showGoal,
-                              selectedGoal: _filter,
-                              essentialAverage: essentialMonthlyAverage(
-                                  history.data ?? const [], settings),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          if (txs.isEmpty)
-                            _empty()
-                          else ...[
-                            _breakdown(txs, settings),
-                            const SizedBox(height: 24),
-                            _list(txs, settings),
-                          ],
-                        ]),
-                  ),
-                ),
+          return StreamBuilder<List<CreditCard>>(
+            stream: _cardsStream,
+            builder: (context, cardsSnap) {
+              _cards = cardsSnap.data ?? _cards;
+              return StreamBuilder<MonthView>(
+                stream: _txStream,
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return const Center(
+                        child: Text(
+                            'Não foi possível carregar seus lançamentos.'));
+                  }
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final view = snap.data!;
+                  final txs = view.counted;
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      // Coluna inteira (não ListView) para a lista existir e o
+                      // toque numa meta conseguir rolar até ela.
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _monthSelector(),
+                              const SizedBox(height: 8),
+                              SummaryCard(txs: txs),
+                              if (UpcomingCard.hasContent(view)) ...[
+                                const SizedBox(height: 16),
+                                UpcomingCard(
+                                  month: _month,
+                                  view: view,
+                                  cards: _cards,
+                                  onOpenNextMonth: () => _shift(1),
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              InvoicesCard(
+                                month: _month,
+                                txs: txs,
+                                cards: _cards,
+                                selectedCardId:
+                                    _filter?.startsWith(_cardPrefix) == true
+                                        ? _filter!.substring(_cardPrefix.length)
+                                        : null,
+                                onSelectCard: (id) =>
+                                    _filter == '$_cardPrefix$id'
+                                        ? setState(() => _filter = null)
+                                        : _showGoal('$_cardPrefix$id'),
+                                onManage: _openCards,
+                                onAddCard: _addCard,
+                              ),
+                              const SizedBox(height: 16),
+                              FutureBuilder<List<Tx>>(
+                                future: _history,
+                                builder: (context, history) => GoalsCard(
+                                  settings: settings,
+                                  txs: txs,
+                                  onEdit: () => _editGoals(settings),
+                                  onSelectGoal: _showGoal,
+                                  selectedGoal: _filter,
+                                  essentialAverage: essentialMonthlyAverage(
+                                      history.data ?? const [], settings),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (txs.isEmpty)
+                                _empty()
+                              else ...[
+                                _breakdown(txs, settings),
+                                const SizedBox(height: 24),
+                                _list(txs, settings),
+                              ],
+                              if (view.deferred.isNotEmpty) ...[
+                                const SizedBox(height: 24),
+                                _deferredList(view.deferred, settings),
+                              ],
+                            ]),
+                      ),
+                    ),
+                  );
+                },
               );
             },
           );
@@ -193,16 +247,61 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openCards() => Navigator.of(context)
+      .push(MaterialPageRoute(builder: (_) => const CardsPage()));
+
+  /// Cadastra um cartão pedindo banco, fechamento e vencimento.
+  Future<CreditCard?> _addCard() async {
+    final draft = await showCardEditor(context, existing: _cards);
+    if (draft == null) return null;
+    return _createCard(draft);
+  }
+
+  Future<CreditCard> _createCard(CreditCard card) async {
+    final saved = await _cardService.add(card);
+    _cards = [..._cards, saved];
+    return saved;
+  }
+
+  CreditCard? _cardOf(String? id) {
+    if (id == null) return null;
+    for (final c in _cards) {
+      if (c.id == id) return c;
+    }
+    return null;
+  }
+
   Future<void> _editGoals(UserSettings current) async {
     final result =
         await showGoalsDialog(context, current, _service.averageIncome);
     if (result != null) await _settingsService.save(result);
   }
 
-  Future<void> _importPdf(BuildContext context) async {
+  Future<void> _importPdf(BuildContext context) => _import(
+        context,
+        extensions: ['pdf'],
+        title: 'Importar fatura',
+        parser: (bytes, name) =>
+            PdfImportService.parseDocument(bytes, fileName: name),
+      );
+
+  Future<void> _importCsv(BuildContext context) => _import(
+        context,
+        extensions: ['csv', 'txt'],
+        title: 'Importar CSV',
+        parser: (bytes, name) async =>
+            CsvImportService.parseDocument(bytes, fileName: name),
+      );
+
+  Future<void> _import(
+    BuildContext context, {
+    required List<String> extensions,
+    required String title,
+    required Future<ParsedStatement> Function(Uint8List, String?) parser,
+  }) async {
     final file = await FilePicker.pickFile(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: extensions,
     );
     if (file == null || !context.mounted) return;
 
@@ -215,40 +314,51 @@ class _HomePageState extends State<HomePage> {
       showDragHandle: true,
       builder: (_) => ImportReviewSheet(
         bytes: bytes,
+        fileName: file.name,
         defaultDate: DateTime(_month.year, _month.month, 1),
-        parser: PdfImportService.parse,
-        title: 'Importar fatura',
+        parser: parser,
+        title: title,
         expenseTypes: _settings.expenseTypes,
+        cards: _cards,
+        onCreateCard: _createCard,
         loadExisting: _service.fetchRange,
+        loadBill: _service.fetchBill,
       ),
     );
-    if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
+    if (txs == null || txs.isEmpty) return;
+    await _service.addAll(txs);
+    if (!mounted) return;
+    _showSaved(txs);
   }
 
-  Future<void> _importCsv(BuildContext context) async {
-    final file = await FilePicker.pickFile(
-      type: FileType.custom,
-      allowedExtensions: ['csv', 'txt'],
-    );
-    if (file == null || !context.mounted) return;
-
-    final bytes = await file.readAsBytes();
-    if (!context.mounted) return;
-
-    final txs = await showModalBottomSheet<List<Tx>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => ImportReviewSheet(
-        bytes: bytes,
-        defaultDate: DateTime(_month.year, _month.month, 1),
-        parser: (b) async => CsvImportService.parse(b),
-        title: 'Importar CSV',
-        expenseTypes: _settings.expenseTypes,
-        loadExisting: _service.fetchRange,
-      ),
-    );
-    if (txs != null && txs.isNotEmpty) await _service.addAll(txs);
+  /// Avisa em que mês os gastos salvos contam e leva até ele.
+  void _showSaved(List<Tx> txs) {
+    final first = txs.first;
+    final target = DateTime(first.cashDate.year, first.cashDate.month);
+    final card = _cardOf(first.cardId);
+    final monthName =
+        toBeginningOfSentenceCase(DateFormat('MMMM', 'pt_BR').format(target));
+    final count = txs
+        .where((t) =>
+            t.cashDate.year == target.year && t.cashDate.month == target.month)
+        .length;
+    final plural = count == 1 ? '' : 's';
+    final where = card != null ? ' no ${card.label}' : '';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(
+            '$count lançamento$plural salvo$plural$where, contando em $monthName.'),
+        action: target == _month
+            ? null
+            : SnackBarAction(
+                label: 'Ver mês',
+                onPressed: () => setState(() {
+                  _month = target;
+                  _txStream = _service.watchMonthView(_month);
+                }),
+              ),
+      ));
   }
 
   Future<void> _editTx(Tx tx) async {
@@ -261,6 +371,8 @@ class _HomePageState extends State<HomePage> {
         editTx: tx,
         settings: _settings,
         onSaveSettings: _persistSettings,
+        cards: _cards,
+        onCreateCard: _createCard,
       ),
     );
     if (result != null) await _service.update(result);
@@ -288,40 +400,6 @@ class _HomePageState extends State<HomePage> {
             onPressed: () => _shift(1),
             icon: const Icon(Icons.chevron_right_rounded)),
       ],
-    );
-  }
-
-  Widget _summary(List<Tx> txs) {
-    final income = _sum(txs, TxType.income);
-    final expense = _sum(txs, TxType.expense);
-    final balance = income - expense;
-    final theme = Theme.of(context);
-    Widget cell(String label, double v, Color color) => Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: theme.textTheme.labelLarge),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(_money.format(v),
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800, color: color)),
-            ),
-          ]),
-        );
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(children: [
-        cell('Entradas', income, const Color(0xFF4ADE80)),
-        cell('Saídas', expense, const Color(0xFFF87171)),
-        cell('Saldo', balance,
-            balance >= 0 ? Colors.white : const Color(0xFFF87171)),
-      ]),
     );
   }
 
@@ -434,40 +512,83 @@ class _HomePageState extends State<HomePage> {
       TxKind.recurring => ' • Mensal',
       TxKind.single => '',
     };
-    return '${t.category} • $date$extra';
+    final when = t.isCredit ? 'compra $date' : date;
+    return '${t.category} • $when$extra';
+  }
+
+  String _deferredSubtitle(Tx t) {
+    final date = DateFormat("dd 'de' MMM", 'pt_BR').format(t.date);
+    final bill =
+        DateFormat('MMM/yy', 'pt_BR').format(t.billDate!).replaceAll('.', '');
+    final plan = t.kind == TxKind.installment && t.count > 1
+        ? '${t.count}x • ${t.index}ª parcela na fatura de $bill'
+        : 'fatura de $bill';
+    return 'compra $date • $plan';
+  }
+
+  /// Rótulo e teste de cada filtro da lista.
+  bool _matches(String? filter, Tx t, UserSettings settings) {
+    final expense = t.type == TxType.expense;
+    if (filter == null) return true;
+    if (filter == _incomeFilter) return t.type == TxType.income;
+    if (filter == _debitFilter) return expense && !t.isCredit;
+    if (filter == _creditFilter) return expense && t.isCredit;
+    if (filter == '$_cardPrefix${InvoicesCard.otherCards}') {
+      return expense && t.isCredit && _cardOf(t.cardId) == null;
+    }
+    if (filter.startsWith(_cardPrefix)) {
+      return expense &&
+          t.isCredit &&
+          t.cardId == filter.substring(_cardPrefix.length);
+    }
+    return expense && settings.budgetOf(t.category).name == filter;
+  }
+
+  String _emptyMessage(String filter) {
+    if (filter == _incomeFilter) return 'Nenhum ganho neste mês.';
+    if (filter == _debitFilter) return 'Nenhum gasto no débito/Pix neste mês.';
+    if (filter == _creditFilter) return 'Nenhum gasto no crédito neste mês.';
+    if (filter.startsWith(_cardPrefix)) {
+      return 'Nenhum gasto nesta fatura.';
+    }
+    return 'Nenhum gasto em $filter neste mês.';
   }
 
   Widget _list(List<Tx> all, UserSettings settings) {
     final theme = Theme.of(context);
     final goals = spendingGoals(settings.effectiveBudgets);
-    // Meta removida ou renomeada: volta a mostrar tudo.
-    final filter = _filter == null ||
-            _filter == _incomeFilter ||
-            goals.any((g) => g.name == _filter)
-        ? _filter
+    final cardFilter = _filter?.startsWith(_cardPrefix) == true
+        ? _filter!.substring(_cardPrefix.length)
         : null;
+    // Meta ou cartão removido/renomeado: volta a mostrar tudo.
+    final valid = _filter == null ||
+        const {_incomeFilter, _debitFilter, _creditFilter}.contains(_filter) ||
+        goals.any((g) => g.name == _filter) ||
+        cardFilter == InvoicesCard.otherCards ||
+        (cardFilter != null && _cardOf(cardFilter) != null);
+    final filter = valid ? _filter : null;
 
-    final txs = switch (filter) {
-      null => all,
-      _incomeFilter => all.where((t) => t.type == TxType.income).toList(),
-      final goal => all
-          .where((t) =>
-              t.type == TxType.expense &&
-              settings.budgetOf(t.category).name == goal)
-          .toList(),
-    };
+    final txs = all.where((t) => _matches(filter, t, settings)).toList();
     final total = txs.fold(0.0, (s, t) => s + t.amount);
+    final hasCredit = all.any((t) => t.isCredit);
 
-    Widget chip(String label, String? value) => Padding(
+    Widget chip(String label, String? value, {Widget? avatar}) => Padding(
           padding: const EdgeInsets.only(right: 8),
           child: ChoiceChip(
             key: Key('filter-${value ?? 'todos'}'),
+            avatar: avatar,
             label: Text(label),
             selected: filter == value,
             onSelected: (_) => setState(() =>
                 _filter = filter == value && value != null ? null : value),
           ),
         );
+
+    final selectedCard = cardFilter == null
+        ? null
+        : cardFilter == InvoicesCard.otherCards
+            ? 'Outros cartões'
+            : _cardOf(cardFilter)?.label;
 
     return Column(
         key: _listKey,
@@ -481,6 +602,15 @@ class _HomePageState extends State<HomePage> {
             scrollDirection: Axis.horizontal,
             child: Row(children: [
               chip('Todos', null),
+              if (selectedCard != null && filter != null)
+                chip(selectedCard, filter,
+                    avatar: const Icon(Icons.credit_card_rounded, size: 16)),
+              if (hasCredit || _cards.isNotEmpty) ...[
+                chip('Débito/Pix', _debitFilter,
+                    avatar: const Icon(Icons.bolt_rounded, size: 16)),
+                chip('Crédito', _creditFilter,
+                    avatar: const Icon(Icons.credit_card_rounded, size: 16)),
+              ],
               for (final goal in goals) chip(goal.name, goal.name),
               chip('Ganhos', _incomeFilter),
             ]),
@@ -504,16 +634,12 @@ class _HomePageState extends State<HomePage> {
             ]),
           ],
           const SizedBox(height: 4),
-          if (txs.isEmpty)
+          if (txs.isEmpty && filter != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: Text(
-                  filter == _incomeFilter
-                      ? 'Nenhum ganho neste mês.'
-                      : 'Nenhum gasto em $filter neste mês.',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                child: Text(_emptyMessage(filter),
+                    style: theme.textTheme.bodyMedium),
               ),
             ),
           for (final t in txs)
@@ -531,47 +657,88 @@ class _HomePageState extends State<HomePage> {
                 await _confirmDelete(t);
                 return false;
               },
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                onTap: () => _editTx(t),
-                leading: CircleAvatar(
-                  backgroundColor: categoryOf(t.type, t.category,
-                          extra: settings.expenseTypes)
-                      .color
-                      .withValues(alpha: 0.20),
-                  child: Icon(
-                      categoryOf(t.type, t.category,
-                              extra: settings.expenseTypes)
-                          .icon,
-                      color: categoryOf(t.type, t.category,
-                              extra: settings.expenseTypes)
-                          .color,
-                      size: 20),
-                ),
-                title: Text(t.description.isEmpty ? t.category : t.description),
-                subtitle: Text(_subtitle(t)),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: t.type == TxType.income
-                            ? const Color(0xFF4ADE80)
-                            : const Color(0xFFF87171),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                      color: const Color(0xFFF87171),
-                      onPressed: () => _confirmDelete(t),
-                    ),
-                  ],
-                ),
-              ),
+              child: _txTile(t, settings),
             ),
         ]);
+  }
+
+  /// Compras no crédito feitas no mês que serão pagas em faturas
+  /// seguintes. Parcelas da mesma compra aparecem uma vez só.
+  Widget _deferredList(List<Tx> deferred, UserSettings settings) {
+    final theme = Theme.of(context);
+    final shown = <Tx>[];
+    final seen = <String>{};
+    for (final t in [...deferred]..sort((a, b) => a.index - b.index)) {
+      if (t.groupId == null || seen.add(t.groupId!)) shown.add(t);
+    }
+    shown.sort((a, b) => b.date.compareTo(a.date));
+    final next = DateTime(_month.year, _month.month + 1);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          const Icon(Icons.update_rounded, size: 20, color: Color(0xFFFBBF24)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Compras no crédito para os próximos meses',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          'Feitas em ${monthName(_month).toLowerCase()}, pagas a partir de '
+          '${monthName(next).toLowerCase()}. Não entram nas saídas deste mês.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        for (final t in shown) _txTile(t, settings, deferred: true),
+      ],
+    );
+  }
+
+  Widget _txTile(Tx t, UserSettings settings, {bool deferred = false}) {
+    final cat = categoryOf(t.type, t.category, extra: settings.expenseTypes);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      onTap: () => _editTx(t),
+      leading: CircleAvatar(
+        backgroundColor: cat.color.withValues(alpha: 0.20),
+        child: Icon(cat.icon, color: cat.color, size: 20),
+      ),
+      title: Text(t.description.isEmpty ? t.category : t.description),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(deferred ? _deferredSubtitle(t) : _subtitle(t)),
+          if (t.payment != null) ...[
+            const SizedBox(height: 4),
+            PaymentTag(tx: t, card: _cardOf(t.cardId)),
+          ],
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${t.type == TxType.income ? '+' : '-'} ${_money.format(t.amount)}',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: deferred
+                  ? const Color(0xFFFBBF24)
+                  : t.type == TxType.income
+                      ? const Color(0xFF4ADE80)
+                      : const Color(0xFFF87171),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, size: 20),
+            color: const Color(0xFFF87171),
+            onPressed: () => _confirmDelete(t),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmDelete(Tx t) async {
@@ -602,7 +769,7 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (choice == 'one') await _service.deleteOne(t.id!);
-    if (choice == 'next') await _service.deleteGroupFrom(t.groupId!, t.date);
+    if (choice == 'next') await _service.deleteGroupFrom(t.groupId!, t);
   }
 
   Widget _empty() => Padding(
@@ -631,9 +798,14 @@ class _HomePageState extends State<HomePage> {
           initialDate:
               sameMonth ? DateTime(now.year, now.month, now.day) : _month,
           settings: _settings,
-          onSaveSettings: _persistSettings),
+          onSaveSettings: _persistSettings,
+          cards: _cards,
+          onCreateCard: _createCard),
     );
-    if (list != null) await _service.addAll(list);
+    if (list == null || list.isEmpty) return;
+    await _service.addAll(list);
+    // Compra no crédito que só conta em outro mês: avisa onde foi parar.
+    if (mounted && list.first.isCredit) _showSaved(list);
   }
 }
 
@@ -642,10 +814,14 @@ class _TxForm extends StatefulWidget {
   final Tx? editTx;
   final UserSettings settings;
   final Future<void> Function(UserSettings next) onSaveSettings;
+  final List<CreditCard> cards;
+  final Future<CreditCard> Function(CreditCard card) onCreateCard;
   const _TxForm({
     required this.initialDate,
     required this.settings,
     required this.onSaveSettings,
+    required this.cards,
+    required this.onCreateCard,
     this.editTx,
   });
   @override
@@ -655,6 +831,11 @@ class _TxForm extends StatefulWidget {
 class _TxFormState extends State<_TxForm> {
   static const _recurringOptions = [6, 12, 24, 36];
   static const _installmentOptions = [2, 3, 4, 5, 6, 10, 12, 18, 24];
+
+  /// Última forma de pagamento e cartão usados, para o próximo lançamento
+  /// já abrir com eles.
+  static PaymentMethod _lastPayment = PaymentMethod.debit;
+  static String? _lastCardId;
 
   final _amount = TextEditingController();
   final _desc = TextEditingController();
@@ -668,6 +849,13 @@ class _TxFormState extends State<_TxForm> {
   String? _error;
   final List<ExpenseType> _created = [];
 
+  PaymentMethod _payment = _lastPayment;
+  String? _cardId;
+
+  /// Vencimento da fatura escolhido à mão (setas). Nulo = calculado.
+  DateTime? _manualBill;
+  late List<CreditCard> _cards = [...widget.cards];
+
   bool get _isEditing => widget.editTx != null;
 
   List<ExpenseType> get _types {
@@ -680,16 +868,40 @@ class _TxFormState extends State<_TxForm> {
 
   List<Category> get _cats => categoriesFor(_type, extra: _types);
 
+  CreditCard? get _card {
+    for (final c in _cards) {
+      if (c.id == _cardId) return c;
+    }
+    return null;
+  }
+
+  bool get _isCredit =>
+      _type == TxType.expense && _payment == PaymentMethod.credit;
+
+  /// Vencimento da fatura do lançamento (ou da primeira parcela).
+  DateTime? get _bill {
+    final card = _card;
+    if (!_isCredit || card == null) return null;
+    return _manualBill ?? card.dueForPurchase(_date);
+  }
+
   @override
   void initState() {
     super.initState();
-    if (widget.editTx != null) {
-      final t = widget.editTx!;
+    final t = widget.editTx;
+    if (t != null) {
       _amount.text = t.amount.toStringAsFixed(2).replaceAll('.', ',');
       _desc.text = t.description;
       _type = t.type;
       _category = t.category;
       _date = t.date;
+      _payment = t.payment ?? PaymentMethod.debit;
+      _cardId = t.cardId;
+      _manualBill = t.billDate;
+    } else if (_payment == PaymentMethod.credit) {
+      _cardId = _cards.any((c) => c.id == _lastCardId)
+          ? _lastCardId
+          : (_cards.length == 1 ? _cards.first.id : null);
     }
   }
 
@@ -706,6 +918,15 @@ class _TxFormState extends State<_TxForm> {
       setState(() => _error = 'Informe um valor maior que zero.');
       return;
     }
+    if (_isCredit && _card == null) {
+      setState(() => _error = 'Escolha o cartão usado na compra.');
+      return;
+    }
+    final payment = _type == TxType.expense ? _payment : null;
+    if (payment != null) {
+      _lastPayment = payment;
+      if (_isCredit) _lastCardId = _cardId;
+    }
     if (_isEditing) {
       final t = widget.editTx!;
       Navigator.pop(
@@ -721,6 +942,9 @@ class _TxFormState extends State<_TxForm> {
           kind: t.kind,
           index: t.index,
           count: t.count,
+          payment: payment,
+          cardId: _isCredit ? _cardId : null,
+          billDate: _bill,
         ),
       );
     } else {
@@ -736,6 +960,9 @@ class _TxFormState extends State<_TxForm> {
           count: _count,
           startIndex: _kind == TxKind.installment ? _currentIndex : 1,
           perInstallment: _kind == TxKind.installment,
+          payment: payment,
+          cardId: _isCredit ? _cardId : null,
+          firstBill: _bill,
         ),
       );
     }
@@ -747,13 +974,22 @@ class _TxFormState extends State<_TxForm> {
       if (value == null || value <= 0) return null;
       final total = value * _count;
       final remaining = _count - _currentIndex + 1;
-      return 'Total: ${_money.format(total)}. Faltam $remaining parcelas de ${_money.format(value)}.';
+      final bill = _bill;
+      final where = bill == null
+          ? ''
+          : ' Nas faturas de ${_monthYear(bill)} a '
+              '${_monthYear(addMonths(bill, remaining - 1))}.';
+      return 'Total: ${_money.format(total)}. Faltam $remaining parcelas de '
+          '${_money.format(value)}.$where';
     }
     if (_kind == TxKind.recurring) {
       return 'Será lançado todo mês, por $_count meses, a partir de ${DateFormat('dd/MM/yyyy').format(_date)}.';
     }
     return null;
   }
+
+  static String _monthYear(DateTime d) =>
+      DateFormat('MMM/yy', 'pt_BR').format(d).replaceAll('.', '');
 
   Future<void> _createType() async {
     final created = await showExpenseTypeDialog(
@@ -782,6 +1018,141 @@ class _TxFormState extends State<_TxForm> {
       _category = created.name;
       _manualCategory = true;
     });
+  }
+
+  /// Primeiro uso de um cartão: pergunta banco, fechamento e vencimento.
+  Future<void> _newCard() async {
+    final draft = await showCardEditor(context, existing: _cards);
+    if (draft == null || !mounted) return;
+    final saved = await widget.onCreateCard(draft);
+    if (!mounted) return;
+    setState(() {
+      _cards = [..._cards, saved];
+      _cardId = saved.id;
+      _manualBill = null;
+      _error = null;
+    });
+  }
+
+  Widget _paymentSection(ThemeData theme) {
+    final card = _card;
+    final bill = _bill;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 16),
+      Text('Como foi pago?', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 8),
+      SegmentedButton<PaymentMethod>(
+        segments: const [
+          ButtonSegment(
+            value: PaymentMethod.debit,
+            icon: Icon(Icons.bolt_rounded),
+            label: Text('Débito/Pix'),
+          ),
+          ButtonSegment(
+            value: PaymentMethod.credit,
+            icon: Icon(Icons.credit_card_rounded),
+            label: Text('Crédito'),
+          ),
+        ],
+        selected: {_payment},
+        onSelectionChanged: (s) => setState(() {
+          _payment = s.first;
+          _error = null;
+          if (_payment == PaymentMethod.credit && _card == null) {
+            _cardId = _cards.any((c) => c.id == _lastCardId)
+                ? _lastCardId
+                : (_cards.length == 1 ? _cards.first.id : null);
+          }
+        }),
+      ),
+      if (_isCredit) ...[
+        const SizedBox(height: 12),
+        if (_cards.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.credit_card_off_rounded,
+                  color: Color(0xFFFBBF24)),
+              const SizedBox(width: 10),
+              const Expanded(
+                  child: Text('Cadastre o cartão para saber em qual fatura '
+                      'a compra vai cair.')),
+              FilledButton.tonal(
+                  onPressed: _newCard, child: const Text('Cadastrar')),
+            ]),
+          )
+        else
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in _cards)
+              ChoiceChip(
+                avatar: BankBadge(bank: c.bank, color: c.color, size: 22),
+                label: Text(c.label),
+                selected: _cardId == c.id,
+                onSelected: (_) => setState(() {
+                  _cardId = c.id;
+                  _manualBill = null;
+                  _error = null;
+                }),
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Novo cartão'),
+              onPressed: _newCard,
+            ),
+          ]),
+        if (card != null && bill != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+            decoration: BoxDecoration(
+              color: Color(card.color).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+              border:
+                  Border.all(color: Color(card.color).withValues(alpha: 0.45)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.receipt_long_rounded,
+                  size: 20, color: Color(0xFFFBBF24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        'Fatura que vence em '
+                        '${DateFormat('dd/MM/yyyy').format(bill)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      'Fecha ${DateFormat('dd/MM').format(card.closingForDue(bill))}'
+                      ' • conta em ${toBeginningOfSentenceCase(DateFormat('MMMM', 'pt_BR').format(bill))}'
+                      '${_manualBill != null && _manualBill != card.dueForPurchase(_date) ? ' • escolhida' : ''}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Fatura anterior',
+                icon: const Icon(Icons.chevron_left_rounded),
+                onPressed: () =>
+                    setState(() => _manualBill = addMonths(bill, -1)),
+              ),
+              IconButton(
+                tooltip: 'Próxima fatura',
+                icon: const Icon(Icons.chevron_right_rounded),
+                onPressed: () =>
+                    setState(() => _manualBill = addMonths(bill, 1)),
+              ),
+            ]),
+          ),
+        ],
+      ],
+    ]);
   }
 
   @override
@@ -816,7 +1187,7 @@ class _TxFormState extends State<_TxForm> {
           const SizedBox(height: 16),
           TextField(
             controller: _amount,
-            autofocus: true,
+            autofocus: !_isEditing,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
@@ -858,6 +1229,7 @@ class _TxFormState extends State<_TxForm> {
                 onPressed: _createType,
               ),
           ]),
+          if (_type == TxType.expense) _paymentSection(theme),
           if (!_isEditing) ...[
             const SizedBox(height: 16),
             SegmentedButton<TxKind>(
@@ -919,9 +1291,11 @@ class _TxFormState extends State<_TxForm> {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             icon: const Icon(Icons.calendar_today_rounded, size: 18),
-            label: Text(_kind == TxKind.single
-                ? DateFormat('dd/MM/yyyy').format(_date)
-                : 'Primeiro lançamento: ${DateFormat('dd/MM/yyyy').format(_date)}'),
+            label: Text(_isCredit
+                ? 'Data da compra: ${DateFormat('dd/MM/yyyy').format(_date)}'
+                : _kind == TxKind.single
+                    ? DateFormat('dd/MM/yyyy').format(_date)
+                    : 'Primeiro lançamento: ${DateFormat('dd/MM/yyyy').format(_date)}'),
             onPressed: () async {
               final picked = await showDatePicker(
                 context: context,
@@ -929,7 +1303,13 @@ class _TxFormState extends State<_TxForm> {
                 firstDate: DateTime(2000),
                 lastDate: DateTime(2100),
               );
-              if (picked != null) setState(() => _date = picked);
+              if (picked != null) {
+                setState(() {
+                  _date = picked;
+                  // Data nova: recalcula a fatura pelo ciclo do cartão.
+                  _manualBill = null;
+                });
+              }
             },
           ),
           if (_error != null) ...[

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/avatar_service.dart';
 import '../widgets/user_avatar.dart';
+import 'cards_page.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
 
@@ -213,6 +214,18 @@ class _AccountPageState extends State<AccountPage> {
                         if (providers.contains('google.com')) 'Google',
                         if (hasPassword) 'E-mail e senha',
                       ].join(' e ')),
+                    ),
+                  ]),
+                  const SizedBox(height: 16),
+                  _Section(title: 'Finanças', children: [
+                    ListTile(
+                      leading: const Icon(Icons.credit_card_rounded),
+                      title: const Text('Meus cartões'),
+                      subtitle: const Text(
+                          'Bancos, fechamento e vencimento das faturas'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const CardsPage())),
                     ),
                   ]),
                   if (hasPassword && email.isNotEmpty) ...[

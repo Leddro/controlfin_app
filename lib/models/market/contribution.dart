@@ -106,7 +106,8 @@ double essentialMonthlyAverage(List<Tx> txs, UserSettings settings) {
   final perMonth = <String, double>{};
   final months = <String>{};
   for (final t in txs.where((t) => t.type == TxType.expense)) {
-    final key = '${t.date.year}-${t.date.month}';
+    // Mês em que o dinheiro sai (crédito pelo vencimento da fatura).
+    final key = '${t.cashDate.year}-${t.cashDate.month}';
     months.add(key);
     if (settings.budgetOf(t.category).kind == BudgetKind.needs) {
       perMonth[key] = (perMonth[key] ?? 0) + t.amount;
@@ -270,7 +271,8 @@ SalaryPlan planNextSalary({
 double? averageMonthlyExpenses(List<Tx> txs) {
   final perMonth = <String, double>{};
   for (final t in txs.where((t) => t.type == TxType.expense)) {
-    final key = '${t.date.year}-${t.date.month}';
+    // Mês em que o dinheiro sai (crédito pelo vencimento da fatura).
+    final key = '${t.cashDate.year}-${t.cashDate.month}';
     perMonth[key] = (perMonth[key] ?? 0) + t.amount;
   }
   if (perMonth.isEmpty) return null;

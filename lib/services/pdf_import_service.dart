@@ -2,18 +2,28 @@ import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+import 'invoice_detection.dart';
 import 'statement_parsing.dart';
 
+export 'invoice_detection.dart' show InvoiceInfo, ParsedStatement;
 export 'statement_parsing.dart' show ParsedItem;
 
 class PdfImportService {
   /// Extrai o texto do PDF e tenta identificar lançamentos de fatura.
-  static Future<List<ParsedItem>> parse(Uint8List bytes) async {
+  static Future<List<ParsedItem>> parse(Uint8List bytes) async =>
+      (await parseDocument(bytes)).items;
+
+  /// Lançamentos e dados da fatura (banco, cartão, vencimento).
+  static Future<ParsedStatement> parseDocument(Uint8List bytes,
+      {String? fileName}) async {
     final document = PdfDocument(inputBytes: bytes);
     final text = PdfTextExtractor(document).extractText();
     document.dispose();
-    return parseText(text);
+    return parseStatementText(text, fileName: fileName);
   }
+
+  static ParsedStatement parseStatementText(String text, {String? fileName}) =>
+      ParsedStatement(parseText(text), detectInvoice(text, fileName: fileName));
 
   // Data no início da linha: "25/10", "25/10/2026", "25 OUT".
   static final _leadingDate = RegExp(

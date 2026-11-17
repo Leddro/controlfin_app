@@ -59,17 +59,16 @@ const expenseCategories = <Category>[
   ]),
   Category('Educação', Icons.school_rounded, Color(0xFF0E7490),
       ['curso', 'faculdade', 'escola', 'livro', 'mensalidade', 'educacao']),
-  Category('Lazer', Icons.celebration_rounded, Color(0xFF65A30D),
-      [
-        'cinema',
-        'netflix',
-        'spotify',
-        'viagem',
-        'bar',
-        'show',
-        'jogo',
-        'steam',
-      ]),
+  Category('Lazer', Icons.celebration_rounded, Color(0xFF65A30D), [
+    'cinema',
+    'netflix',
+    'spotify',
+    'viagem',
+    'bar',
+    'show',
+    'jogo',
+    'steam',
+  ]),
   Category('Compras', Icons.shopping_bag_rounded, Color(0xFFB45309),
       ['roupa', 'sapato', 'shopee', 'amazon', 'presente']),
   Category('Outros', Icons.more_horiz_rounded, Color(0xFF64748B)),
@@ -137,6 +136,10 @@ Category? suggestCategory(
 
 enum TxKind { single, recurring, installment }
 
+/// Como um gasto foi pago. Débito, Pix e dinheiro saem na hora; crédito sai
+/// no vencimento da fatura.
+enum PaymentMethod { debit, credit }
+
 /// Categorias tratadas como "essenciais" na regra 50/30/20.
 const needsCategoryNames = {
   'Moradia',
@@ -174,6 +177,15 @@ class Tx {
   final int index; // posição na série (1..count)
   final int count;
 
+  /// Forma de pagamento do gasto. Nulo em lançamentos antigos e em ganhos.
+  final PaymentMethod? payment;
+
+  /// Cartão usado, quando [payment] é crédito.
+  final String? cardId;
+
+  /// Vencimento da fatura em que o gasto no crédito é cobrado.
+  final DateTime? billDate;
+
   Tx({
     this.id,
     required this.type,
@@ -185,7 +197,44 @@ class Tx {
     this.kind = TxKind.single,
     this.index = 1,
     this.count = 1,
+    this.payment,
+    this.cardId,
+    this.billDate,
   });
+
+  bool get isCredit => payment == PaymentMethod.credit;
+
+  /// Data em que o dinheiro sai: o vencimento da fatura no crédito, a
+  /// própria data nos demais. Define em qual mês o lançamento conta.
+  DateTime get cashDate => isCredit && billDate != null ? billDate! : date;
+
+  Tx copyWith({
+    String? id,
+    double? amount,
+    DateTime? date,
+    String? groupId,
+    TxKind? kind,
+    int? index,
+    int? count,
+    PaymentMethod? Function()? payment,
+    String? Function()? cardId,
+    DateTime? Function()? billDate,
+  }) =>
+      Tx(
+        id: id ?? this.id,
+        type: type,
+        amount: amount ?? this.amount,
+        category: category,
+        description: description,
+        date: date ?? this.date,
+        groupId: groupId ?? this.groupId,
+        kind: kind ?? this.kind,
+        index: index ?? this.index,
+        count: count ?? this.count,
+        payment: payment != null ? payment() : this.payment,
+        cardId: cardId != null ? cardId() : this.cardId,
+        billDate: billDate != null ? billDate() : this.billDate,
+      );
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -197,6 +246,11 @@ class Tx {
         'index': index,
         'count': count,
         if (groupId != null) 'groupId': groupId,
+        // Sempre gravados (mesmo nulos) para a edição conseguir limpar.
+        'payment': payment?.name,
+        'cardId': isCredit ? cardId : null,
+        'billDate':
+            isCredit && billDate != null ? Timestamp.fromDate(billDate!) : null,
       };
 
   factory Tx.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -213,6 +267,10 @@ class Tx {
           .firstWhere((k) => k.name == d['kind'], orElse: () => TxKind.single),
       index: (d['index'] as num?)?.toInt() ?? 1,
       count: (d['count'] as num?)?.toInt() ?? 1,
+      payment:
+          PaymentMethod.values.where((p) => p.name == d['payment']).firstOrNull,
+      cardId: d['cardId'] as String?,
+      billDate: (d['billDate'] as Timestamp?)?.toDate(),
     );
   }
 }
@@ -223,6 +281,9 @@ class Tx {
 /// - [perInstallment] = true: [amount] é o valor de CADA parcela.
 /// - [startIndex] indica a partir de qual parcela gerar (ex.: já pagou as 2
 ///   primeiras, começar pela 3).
+/// - No crédito, [firstBill] é o vencimento da fatura do primeiro
+///   lançamento; os seguintes vão para as faturas dos meses seguintes. As
+///   parcelas de uma compra no crédito guardam a data da compra.
 List<Tx> buildSeries({
   required TxType type,
   required double amount,
@@ -233,34 +294,36 @@ List<Tx> buildSeries({
   int count = 1,
   int startIndex = 1,
   bool perInstallment = false,
+  PaymentMethod? payment,
+  String? cardId,
+  DateTime? firstBill,
 }) {
-  if (kind == TxKind.single || count <= 1) {
-    return [
-      Tx(
-          type: type,
-          amount: amount,
-          category: category,
-          description: description,
-          date: start)
-    ];
-  }
+  final credit = payment == PaymentMethod.credit;
+  Tx make(double value, int offset, {String? groupId, int index = 1}) => Tx(
+        type: type,
+        amount: value,
+        category: category,
+        description: description,
+        date: credit && kind == TxKind.installment
+            ? start
+            : addMonths(start, offset),
+        groupId: groupId,
+        kind: groupId == null ? TxKind.single : kind,
+        index: index,
+        count: groupId == null ? 1 : count,
+        payment: payment,
+        cardId: credit ? cardId : null,
+        billDate:
+            credit && firstBill != null ? addMonths(firstBill, offset) : null,
+      );
+
+  if (kind == TxKind.single || count <= 1) return [make(amount, 0)];
 
   final groupId = '${DateTime.now().microsecondsSinceEpoch}';
 
   if (kind == TxKind.recurring) {
-    return List.generate(count, (i) {
-      return Tx(
-        type: type,
-        amount: amount,
-        category: category,
-        description: description,
-        date: addMonths(start, i),
-        groupId: groupId,
-        kind: kind,
-        index: i + 1,
-        count: count,
-      );
-    });
+    return List.generate(
+        count, (i) => make(amount, i, groupId: groupId, index: i + 1));
   }
 
   // Parcelada
@@ -268,19 +331,8 @@ List<Tx> buildSeries({
 
   if (perInstallment) {
     // amount já é o valor de cada parcela — não precisa dividir
-    return List.generate(remaining, (i) {
-      return Tx(
-        type: type,
-        amount: amount,
-        category: category,
-        description: description,
-        date: addMonths(start, i),
-        groupId: groupId,
-        kind: kind,
-        index: startIndex + i,
-        count: count,
-      );
-    });
+    return List.generate(remaining,
+        (i) => make(amount, i, groupId: groupId, index: startIndex + i));
   }
 
   // amount é o total — divide entre as parcelas com ajuste de centavos
@@ -291,16 +343,6 @@ List<Tx> buildSeries({
   return List.generate(remaining, (i) {
     final idx = startIndex + i;
     final value = (baseCents + ((idx - 1) < extra ? 1 : 0)) / 100;
-    return Tx(
-      type: type,
-      amount: value,
-      category: category,
-      description: description,
-      date: addMonths(start, i),
-      groupId: groupId,
-      kind: kind,
-      index: idx,
-      count: count,
-    );
+    return make(value, i, groupId: groupId, index: idx);
   });
 }

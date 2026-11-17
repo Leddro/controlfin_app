@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:csv/csv.dart';
 
+import 'invoice_detection.dart';
 import 'statement_parsing.dart';
 
 /// Mapeamento de cabeçalhos conhecidos para tipo de coluna.
@@ -56,7 +57,17 @@ const _installmentHeaders = {
 };
 
 class CsvImportService {
-  static List<ParsedItem> parse(Uint8List bytes) {
+  /// Lan\u00E7amentos e o que der para saber do arquivo. O CSV quase nunca traz
+  /// o banco: o nome do arquivo ajuda (ex.: "Nubank_2027-01-09.csv").
+  static ParsedStatement parseDocument(Uint8List bytes, {String? fileName}) {
+    final text = _decode(bytes);
+    return ParsedStatement(
+        _parseText(text), detectInvoice(text, fileName: fileName));
+  }
+
+  static List<ParsedItem> parse(Uint8List bytes) => _parseText(_decode(bytes));
+
+  static String _decode(Uint8List bytes) {
     // Tenta UTF-8 primeiro, depois latin-1 (comum em bancos brasileiros)
     String text;
     try {
@@ -67,7 +78,10 @@ class CsvImportService {
 
     // Remove BOM se existir
     if (text.startsWith('\uFEFF')) text = text.substring(1);
+    return text;
+  }
 
+  static List<ParsedItem> _parseText(String text) {
     // Detecta separador automaticamente (;, , ou tab)
     final sep = _detectSeparator(text);
     final rows = Csv(fieldDelimiter: sep, autoDetect: false).decode(text);

@@ -47,7 +47,7 @@ class _ContributionSectionState extends State<ContributionSection> {
   late final _settingsStream = _settingsService.watch();
   late final _monthStream = _txService.watchMonth(_thisMonth);
   late final _holdingsStream = _holdingsService.watch();
-  late final Future<List<Tx>> _history = _txService.fetchRange(
+  late final Future<List<Tx>> _history = _txService.fetchCashRange(
     DateTime(_thisMonth.year, _thisMonth.month - 3),
     _thisMonth.subtract(const Duration(days: 1)),
   );
