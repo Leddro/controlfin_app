@@ -331,6 +331,25 @@ class _HomePageState extends State<HomePage> {
     _showSaved(txs);
   }
 
+  /// Confirma onde ficaram as parcelas depois de editar a compra.
+  void _showPurchaseUpdated(List<Tx> series) {
+    final sorted = [...series]..sort((a, b) => a.index - b.index);
+    final first = sorted.first.cashDate;
+    final last = sorted.last.cashDate;
+    String my(DateTime d) =>
+        DateFormat('MMM/yy', 'pt_BR').format(d).replaceAll('.', '');
+    final card = _cardOf(sorted.first.cardId);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(
+          'Compra atualizada: ${sorted.length} parcela${sorted.length == 1 ? '' : 's'}'
+          '${card != null ? ' no ${card.label}' : ''}, '
+          '${first == last ? 'em ${my(first)}' : 'de ${my(first)} a ${my(last)}'}.',
+        ),
+      ));
+  }
+
   /// Avisa em que mês os gastos salvos contam e leva até ele.
   void _showSaved(List<Tx> txs) {
     final first = txs.first;
@@ -375,7 +394,67 @@ class _HomePageState extends State<HomePage> {
         onCreateCard: _createCard,
       ),
     );
-    if (result != null) await _service.update(result);
+    if (result == null || !mounted) return;
+
+    // Parcela: a edição vale para a compra; as parcelas acompanham.
+    if (result.kind == TxKind.installment) {
+      final series =
+          tx.groupId == null ? [tx] : await _service.fetchSeries(tx.groupId!);
+      final updated = rebuildInstallments(result, series, oldAmount: tx.amount);
+      await _service.updateAll(updated);
+      if (!mounted) return;
+      _showPurchaseUpdated(updated);
+      return;
+    }
+
+    if (tx.groupId == null) {
+      await _service.update(result);
+      return;
+    }
+    // Lançamento mensal: pergunta se muda só este mês ou todos, quando a
+    // edição mudou algo da série ou o resto da série está diferente.
+    var differs = changesSeries(tx, result);
+    if (!differs) {
+      try {
+        final series = await _service.fetchSeries(tx.groupId!);
+        final expected = applyToSeries(result, series);
+        differs = [
+          for (var i = 0; i < series.length; i++)
+            changesSeries(series[i], expected[i]),
+        ].any((d) => d);
+      } catch (_) {
+        differs = false;
+      }
+      if (!mounted) return;
+    }
+    if (!differs) {
+      await _service.update(result);
+      return;
+    }
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Alterar os outros meses?'),
+        content: const Text(
+          'Este lançamento se repete todo mês. A forma de pagamento, o cartão, '
+          'a categoria e a descrição podem valer para todos os meses. A data '
+          'e o valor de cada mês não mudam.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'one'),
+              child: const Text('Só este mês')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'all'),
+              child: const Text('Todos os meses')),
+        ],
+      ),
+    );
+    if (choice == 'one') await _service.update(result);
+    if (choice == 'all') await _service.updateSeries(result);
   }
 
   Widget _monthSelector() {
@@ -854,6 +933,9 @@ class _TxFormState extends State<_TxForm> {
 
   /// Vencimento da fatura escolhido à mão (setas). Nulo = calculado.
   DateTime? _manualBill;
+
+  /// O usuário escolheu a parcela atual à mão: não sugerir mais.
+  bool _indexTouched = false;
   late List<CreditCard> _cards = [...widget.cards];
 
   bool get _isEditing => widget.editTx != null;
@@ -878,11 +960,54 @@ class _TxFormState extends State<_TxForm> {
   bool get _isCredit =>
       _type == TxType.expense && _payment == PaymentMethod.credit;
 
-  /// Vencimento da fatura do lançamento (ou da primeira parcela).
+  /// O formulário trata de uma compra parcelada (nova ou já salva).
+  bool get _isInstallment => _isEditing
+      ? widget.editTx!.kind == TxKind.installment
+      : _kind == TxKind.installment;
+
+  /// Parcela mostrada na linha da fatura: a que está sendo editada ou, numa
+  /// compra nova, a partir da qual as parcelas serão lançadas.
+  int get _billIndex {
+    if (!_isInstallment) return 1;
+    return _isEditing ? widget.editTx!.index : _currentIndex;
+  }
+
+  int get _installments => _isEditing ? widget.editTx!.count : _count;
+
+  /// Fatura em que cai a parcela [_billIndex]: a parcela N vai para a
+  /// N-ésima fatura depois da compra, a não ser que o usuário mova com as
+  /// setas.
   DateTime? get _bill {
     final card = _card;
     if (!_isCredit || card == null) return null;
-    return _manualBill ?? card.dueForPurchase(_date);
+    return _manualBill ?? addMonths(card.dueForPurchase(_date), _billIndex - 1);
+  }
+
+  /// Compra nova no crédito com data no passado: começa pela primeira
+  /// parcela cuja fatura ainda não venceu (as anteriores já foram pagas).
+  void _suggestIndex() {
+    final card = _card;
+    if (_isEditing || _indexTouched || !_isCredit || card == null) return;
+    if (_kind != TxKind.installment) return;
+    final now = DateTime.now();
+    final thisMonth = DateTime(now.year, now.month);
+    final first = card.dueForPurchase(_date);
+    var k = 1;
+    while (k < _count && addMonths(first, k - 1).isBefore(thisMonth)) {
+      k++;
+    }
+    _currentIndex = k;
+  }
+
+  /// Ao trocar a forma de pagamento de uma parcela já salva, ajusta a data:
+  /// no crédito vale a data da compra (da 1ª parcela); no débito, a data
+  /// daquela parcela.
+  void _adjustEditedDate() {
+    final t = widget.editTx;
+    if (t == null || t.kind != TxKind.installment) return;
+    final purchase = t.isCredit ? t.date : addMonths(t.date, 1 - t.index);
+    _date = _isCredit ? purchase : addMonths(purchase, t.index - 1);
+    _manualBill = null;
   }
 
   @override
@@ -988,6 +1113,46 @@ class _TxFormState extends State<_TxForm> {
     return null;
   }
 
+  String _dateLabel() {
+    if (_isCredit) return 'Data da compra';
+    if (_isInstallment) return 'Data da parcela $_billIndex';
+    if (!_isEditing && _kind == TxKind.recurring) return 'Primeiro lançamento';
+    return 'Data';
+  }
+
+  Widget _purchaseBanner(ThemeData theme) {
+    final t = widget.editTx!;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBBF24).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: const Color(0xFFFBBF24).withValues(alpha: 0.35)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.layers_rounded, color: Color(0xFFFBBF24)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Compra parcelada • parcela ${t.index} de ${t.count}',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(
+                'Você está editando a compra. Cartão, categoria, descrição e '
+                'valor valem para todas as parcelas, e cada parcela acompanha '
+                'a data da compra.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
   static String _monthYear(DateTime d) =>
       DateFormat('MMM/yy', 'pt_BR').format(d).replaceAll('.', '');
 
@@ -1063,6 +1228,9 @@ class _TxFormState extends State<_TxForm> {
                 ? _lastCardId
                 : (_cards.length == 1 ? _cards.first.id : null);
           }
+          _adjustEditedDate();
+          _manualBill = null;
+          _suggestIndex();
         }),
       ),
       if (_isCredit) ...[
@@ -1097,6 +1265,7 @@ class _TxFormState extends State<_TxForm> {
                   _cardId = c.id;
                   _manualBill = null;
                   _error = null;
+                  _suggestIndex();
                 }),
               ),
             ActionChip(
@@ -1124,26 +1293,35 @@ class _TxFormState extends State<_TxForm> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        'Fatura que vence em '
-                        '${DateFormat('dd/MM/yyyy').format(bill)}',
+                        _isInstallment
+                            ? 'Parcela $_billIndex de $_installments na fatura '
+                                'de ${DateFormat('dd/MM/yyyy').format(bill)}'
+                            : 'Fatura que vence em '
+                                '${DateFormat('dd/MM/yyyy').format(bill)}',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                     Text(
-                      'Fecha ${DateFormat('dd/MM').format(card.closingForDue(bill))}'
-                      ' • conta em ${toBeginningOfSentenceCase(DateFormat('MMMM', 'pt_BR').format(bill))}'
-                      '${_manualBill != null && _manualBill != card.dueForPurchase(_date) ? ' • escolhida' : ''}',
+                      _isInstallment
+                          ? '1ª parcela em ${_monthYear(addMonths(bill, 1 - _billIndex))}'
+                              ' • última em ${_monthYear(addMonths(bill, _installments - _billIndex))}'
+                          : 'Fecha ${DateFormat('dd/MM').format(card.closingForDue(bill))}'
+                              ' • conta em ${toBeginningOfSentenceCase(DateFormat('MMMM', 'pt_BR').format(bill))}',
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
               IconButton(
-                tooltip: 'Fatura anterior',
+                tooltip: _isInstallment
+                    ? 'Parcela uma fatura antes'
+                    : 'Fatura anterior',
                 icon: const Icon(Icons.chevron_left_rounded),
                 onPressed: () =>
                     setState(() => _manualBill = addMonths(bill, -1)),
               ),
               IconButton(
-                tooltip: 'Próxima fatura',
+                tooltip: _isInstallment
+                    ? 'Parcela uma fatura depois'
+                    : 'Próxima fatura',
                 icon: const Icon(Icons.chevron_right_rounded),
                 onPressed: () =>
                     setState(() => _manualBill = addMonths(bill, 1)),
@@ -1167,6 +1345,10 @@ class _TxFormState extends State<_TxForm> {
       child: SingleChildScrollView(
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (_isEditing && _isInstallment) ...[
+            _purchaseBanner(theme),
+            const SizedBox(height: 16),
+          ],
           SegmentedButton<TxType>(
             segments: const [
               ButtonSegment(value: TxType.expense, label: Text('Gasto')),
@@ -1229,7 +1411,6 @@ class _TxFormState extends State<_TxForm> {
                 onPressed: _createType,
               ),
           ]),
-          if (_type == TxType.expense) _paymentSection(theme),
           if (!_isEditing) ...[
             const SizedBox(height: 16),
             SegmentedButton<TxKind>(
@@ -1246,6 +1427,9 @@ class _TxFormState extends State<_TxForm> {
                 _kind = s.first;
                 _count = _kind == TxKind.installment ? 3 : 12;
                 _currentIndex = 1;
+                _indexTouched = false;
+                _manualBill = null;
+                _suggestIndex();
               }),
             ),
             if (_kind != TxKind.single) ...[
@@ -1265,6 +1449,8 @@ class _TxFormState extends State<_TxForm> {
                     onSelected: (_) => setState(() {
                       _count = n;
                       if (_currentIndex > n) _currentIndex = 1;
+                      _manualBill = null;
+                      _suggestIndex();
                     }),
                   ),
               ]),
@@ -1278,7 +1464,11 @@ class _TxFormState extends State<_TxForm> {
                     ChoiceChip(
                       label: Text('$i'),
                       selected: _currentIndex == i,
-                      onSelected: (_) => setState(() => _currentIndex = i),
+                      onSelected: (_) => setState(() {
+                        _currentIndex = i;
+                        _indexTouched = true;
+                        _manualBill = null;
+                      }),
                     ),
                 ]),
               ],
@@ -1291,11 +1481,8 @@ class _TxFormState extends State<_TxForm> {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             icon: const Icon(Icons.calendar_today_rounded, size: 18),
-            label: Text(_isCredit
-                ? 'Data da compra: ${DateFormat('dd/MM/yyyy').format(_date)}'
-                : _kind == TxKind.single
-                    ? DateFormat('dd/MM/yyyy').format(_date)
-                    : 'Primeiro lançamento: ${DateFormat('dd/MM/yyyy').format(_date)}'),
+            label: Text('${_dateLabel()}: '
+                '${DateFormat('dd/MM/yyyy').format(_date)}'),
             onPressed: () async {
               final picked = await showDatePicker(
                 context: context,
@@ -1308,10 +1495,12 @@ class _TxFormState extends State<_TxForm> {
                   _date = picked;
                   // Data nova: recalcula a fatura pelo ciclo do cartão.
                   _manualBill = null;
+                  _suggestIndex();
                 });
               }
             },
           ),
+          if (_type == TxType.expense) _paymentSection(theme),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!,

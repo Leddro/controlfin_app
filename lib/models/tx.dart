@@ -158,11 +158,14 @@ double? parseMoney(String text) {
 }
 
 /// Soma meses sem estourar o dia (31/01 + 1 mês = 28/02).
+/// Aceita [n] negativo (voltar meses), inclusive atravessando o ano.
 DateTime addMonths(DateTime d, int n) {
-  final y = d.year + (d.month - 1 + n) ~/ 12;
-  final m = (d.month - 1 + n) % 12 + 1;
-  final last = DateTime(y, m + 1, 0).day;
-  return DateTime(y, m, d.day > last ? last : d.day);
+  // DateTime normaliza o mês (13 vira janeiro do ano seguinte, 0 vira
+  // dezembro do anterior). A divisão inteira antiga arredondava -2 ~/ 12
+  // para 0 e errava o ano ao voltar meses.
+  final first = DateTime(d.year, d.month + n);
+  final last = DateTime(first.year, first.month + 1, 0).day;
+  return DateTime(first.year, first.month, d.day > last ? last : d.day);
 }
 
 class Tx {
@@ -346,3 +349,87 @@ List<Tx> buildSeries({
     return make(value, i, groupId: groupId, index: idx);
   });
 }
+
+/// Edição de uma compra parcelada: [edited] é a parcela aberta no
+/// formulário, já com a data da compra (crédito) ou a data dela (débito) e,
+/// no crédito, a fatura em que ela cai. As outras parcelas acompanham:
+///
+/// - crédito: todas guardam a data da compra e a parcela N vai para a
+///   fatura N-k meses depois da fatura da parcela editada (k);
+/// - débito: cada parcela fica um mês depois da anterior.
+///
+/// Cartão, categoria e descrição valem para todas. O valor novo vale para
+/// as parcelas que tinham o mesmo valor da editada ([oldAmount]); as que
+/// diferem (ajuste de centavos) ficam como estão.
+List<Tx> rebuildInstallments(Tx edited, List<Tx> series, {double? oldAmount}) {
+  final all =
+      series.any((o) => o.id == edited.id) ? series : [...series, edited];
+  return [
+    for (final o in all)
+      if (o.id == edited.id)
+        edited
+      else
+        Tx(
+          id: o.id,
+          type: edited.type,
+          amount: oldAmount != null && (o.amount - oldAmount).abs() < 0.005
+              ? edited.amount
+              : o.amount,
+          category: edited.category,
+          description: edited.description,
+          date: edited.isCredit
+              ? edited.date
+              : addMonths(edited.date, o.index - edited.index),
+          groupId: o.groupId,
+          kind: o.kind,
+          index: o.index,
+          count: o.count,
+          payment: edited.payment,
+          cardId: edited.isCredit ? edited.cardId : null,
+          billDate: edited.isCredit && edited.billDate != null
+              ? addMonths(edited.billDate!, o.index - edited.index)
+              : null,
+        ),
+  ];
+}
+
+/// Leva a forma de pagamento, o cartão, a categoria e a descrição de
+/// [edited] para os outros meses de um lançamento mensal. Cada mês mantém
+/// a data e o valor; no crédito, vai para a fatura do seu mês.
+List<Tx> applyToSeries(Tx edited, List<Tx> series) => [
+      for (final o in series)
+        if (o.id == edited.id)
+          edited
+        else
+          Tx(
+            id: o.id,
+            type: edited.type,
+            amount: o.amount,
+            category: edited.category,
+            description: edited.description,
+            date: o.date,
+            groupId: o.groupId,
+            kind: o.kind,
+            index: o.index,
+            count: o.count,
+            payment: edited.payment,
+            cardId: edited.isCredit ? edited.cardId : null,
+            billDate: edited.isCredit && edited.billDate != null
+                ? addMonths(edited.billDate!, o.index - edited.index)
+                : null,
+          ),
+    ];
+
+/// A edição mudou algo que faz sentido levar para o resto da série.
+bool changesSeries(Tx before, Tx after) =>
+    before.payment != after.payment ||
+    before.cardId != after.cardId ||
+    before.category != after.category ||
+    before.description != after.description ||
+    (after.isCredit &&
+        after.billDate != null &&
+        (before.billDate == null ||
+            !_sameDay(before.billDate!, after.billDate!)));
+
+bool _sameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;

@@ -97,6 +97,32 @@ class TxService {
 
   Future<void> update(Tx tx) => _col.doc(tx.id!).update(tx.toMap());
 
+  /// Grava vários lançamentos já existentes de uma vez.
+  Future<void> updateAll(List<Tx> list) async {
+    final batch = FirebaseFirestore.instance.batch();
+    for (final t in list) {
+      batch.update(_col.doc(t.id!), t.toMap());
+    }
+    await batch.commit();
+  }
+
+  /// Todos os lançamentos de uma série (parcelas ou meses).
+  Future<List<Tx>> fetchSeries(String groupId) async {
+    final snap = await _col.where('groupId', isEqualTo: groupId).get();
+    return snap.docs.map(Tx.fromDoc).toList();
+  }
+
+  /// Grava [edited] e leva a forma de pagamento, o cartão, a categoria e a
+  /// descrição para o resto da série (ver [applyToSeries]).
+  Future<void> updateSeries(Tx edited) async {
+    final series = await fetchSeries(edited.groupId!);
+    final batch = FirebaseFirestore.instance.batch();
+    for (final t in applyToSeries(edited, series)) {
+      batch.update(_col.doc(t.id!), t.toMap());
+    }
+    await batch.commit();
+  }
+
   /// Apaga o lançamento [from] e os seguintes da mesma série. Usa a
   /// posição na série, porque as parcelas no crédito têm a mesma data.
   Future<void> deleteGroupFrom(String groupId, Tx from) async {
