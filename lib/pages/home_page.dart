@@ -14,6 +14,7 @@ import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../models/market/contribution.dart';
+import '../widgets/bank_inbox_banner.dart';
 import '../widgets/card_editor_sheet.dart';
 import '../widgets/card_widgets.dart';
 import '../widgets/expense_type_dialog.dart';
@@ -159,6 +160,7 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               _monthSelector(),
                               const SizedBox(height: 8),
+                              const BankInboxBanner(),
                               SummaryCard(txs: txs),
                               if (UpcomingCard.hasContent(view)) ...[
                                 const SizedBox(height: 16),

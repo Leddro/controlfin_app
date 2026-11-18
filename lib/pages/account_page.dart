@@ -8,6 +8,9 @@ import '../services/auth_service.dart';
 import '../services/avatar_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/app_header.dart';
+import '../services/notification_samples_service.dart';
+import 'bank_notifications_page.dart';
+import 'dev_review_page.dart';
 import 'cards_page.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
@@ -228,7 +231,33 @@ class _AccountPageState extends State<AccountPage> {
                       onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const CardsPage())),
                     ),
+                    ListTile(
+                      leading: const Icon(Icons.notifications_active_rounded),
+                      title: const Text('Notificações dos bancos'),
+                      subtitle: const Text(
+                          'Compras e Pix lidos das notificações: confirmar e '
+                          'validar as leituras'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const BankNotificationsPage())),
+                    ),
                   ]),
+                  if (isDeveloper(user)) ...[
+                    const SizedBox(height: 16),
+                    _Section(title: 'Desenvolvedor', children: [
+                      ListTile(
+                        leading: const Icon(Icons.fact_check_rounded),
+                        title: const Text('Revisão das notificações'),
+                        subtitle: const Text(
+                            'Textos dos bancos enviados pelos usuários e a '
+                            'leitura de cada um'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const DevReviewPage())),
+                      ),
+                    ]),
+                  ],
                   if (hasPassword && email.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _Section(title: 'Segurança', children: [
