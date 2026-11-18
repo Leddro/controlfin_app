@@ -4,7 +4,7 @@ import 'package:financas_app/models/tx.dart';
 import 'package:financas_app/services/tx_service.dart';
 import 'package:financas_app/widgets/summary_card.dart';
 import 'package:financas_app/widgets/upcoming_card.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 

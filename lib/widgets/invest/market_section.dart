@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/investor_profile.dart';
@@ -41,26 +42,44 @@ class MarketSection extends StatefulWidget {
   /// Aporte do mês e carteira atual (usam o Firebase; desligado nos testes).
   final bool showContribution;
 
+  /// Calcula a carteira-alvo. Padrão: em outro isolate. Os testes passam
+  /// um cálculo direto, porque o relógio simulado não espera o isolate.
+  final Future<PortfolioPlan?> Function(InvestorProfile, MarketData)? planner;
+
   const MarketSection({
     super.key,
     required this.profile,
     this.loader,
     this.showContribution = true,
+    this.planner,
   });
 
   @override
   State<MarketSection> createState() => _MarketSectionState();
 }
 
-class _MarketSectionState extends State<MarketSection> {
-  late Future<MarketData> _future = _load();
+/// Calcula a carteira-alvo. Função de topo para rodar em outro isolate.
+PortfolioPlan? _buildPlan((InvestorProfile, MarketData) args) =>
+    PortfolioEngine.build(args.$1, args.$2);
 
-  Future<MarketData> _load() =>
-      (widget.loader ?? MarketRepository().load).call();
+class _MarketSectionState extends State<MarketSection> {
+  late Future<(MarketData, PortfolioPlan?)> _future = _load();
+
+  /// Busca o mercado e calcula a carteira uma vez só. A otimização leva
+  /// centenas de milissegundos: roda fora da thread da interface para a
+  /// tela não travar (no web, o compute roda na mesma thread).
+  Future<(MarketData, PortfolioPlan?)> _load() async {
+    final data = await (widget.loader ?? MarketRepository().load).call();
+    final planner = widget.planner;
+    final plan = planner != null
+        ? await planner(widget.profile, data)
+        : await compute(_buildPlan, (widget.profile, data));
+    return (data, plan);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<MarketData>(
+    return FutureBuilder<(MarketData, PortfolioPlan?)>(
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
@@ -76,8 +95,7 @@ class _MarketSectionState extends State<MarketSection> {
             ]),
           );
         }
-        final data = snap.data ?? const MarketData();
-        final plan = PortfolioEngine.build(widget.profile, data);
+        final (data, plan) = snap.data ?? (const MarketData(), null);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

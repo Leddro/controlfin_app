@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../models/investor_profile.dart';
 import '../services/investor_profile_service.dart';
 import '../widgets/investor_quiz.dart';
+import '../widgets/app_header.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
 
@@ -42,7 +43,7 @@ class _InvestorProfilePageState extends State<InvestorProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil de investidor')),
+      appBar: const AppHeader(title: 'Perfil de investidor'),
       body: StreamBuilder<InvestorProfile?>(
         stream: _stream,
         builder: (context, snap) {

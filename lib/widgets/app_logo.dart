@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Logo do ControlFin em SVG inline, renderizada via Canvas.
 /// Exibe o "C" dourado com gráfico de barras e seta de tendência.

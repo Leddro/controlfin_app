@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../models/credit_card.dart';
@@ -14,7 +14,6 @@ import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../models/market/contribution.dart';
-import '../widgets/app_logo.dart';
 import '../widgets/card_editor_sheet.dart';
 import '../widgets/card_widgets.dart';
 import '../widgets/expense_type_dialog.dart';
@@ -23,16 +22,13 @@ import '../widgets/invoices_card.dart';
 import '../widgets/pdf_import_sheet.dart';
 import '../widgets/summary_card.dart';
 import '../widgets/upcoming_card.dart';
-import '../widgets/user_avatar.dart';
+import '../widgets/app_header.dart';
 import 'cards_page.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
 class HomePage extends StatefulWidget {
-  /// Chamado ao tocar na foto do usuário (abre a aba Conta).
-  final VoidCallback? onOpenAccount;
-
-  const HomePage({super.key, this.onOpenAccount});
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -92,18 +88,9 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const Padding(
-          padding: EdgeInsets.all(10),
-          child: AppLogo(size: 32),
-        ),
-        // Encolhe em telas estreitas para caber o botão de importar.
-        title: const FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text('ControlFin',
-              style: TextStyle(
-                  fontWeight: FontWeight.w800, color: Color(0xFFFBBF24))),
-        ),
+      appBar: AppHeader(
+        title: 'ControlFin',
+        highlight: true,
         actions: [
           MenuAnchor(
             alignmentOffset: const Offset(0, 4),
@@ -130,17 +117,6 @@ class _HomePageState extends State<HomePage> {
                 child: const Text('Arquivo CSV'),
               ),
             ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, right: 12),
-            child: Tooltip(
-              message: 'Conta',
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: widget.onOpenAccount,
-                child: const UserAvatar(radius: 17),
-              ),
-            ),
           ),
         ],
       ),

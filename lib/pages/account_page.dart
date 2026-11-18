@@ -2,11 +2,12 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../services/auth_service.dart';
 import '../services/avatar_service.dart';
 import '../widgets/user_avatar.dart';
+import '../widgets/app_header.dart';
 import 'cards_page.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
@@ -153,7 +154,7 @@ class _AccountPageState extends State<AccountPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Conta')),
+      appBar: const AppHeader(title: 'Conta'),
       body: StreamBuilder<User?>(
         stream: _stream,
         initialData: FirebaseAuth.instance.currentUser,

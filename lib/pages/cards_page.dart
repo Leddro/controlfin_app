@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/credit_card.dart';
 import '../services/card_service.dart';
 import '../widgets/card_editor_sheet.dart';
 import '../widgets/card_widgets.dart';
+import '../widgets/app_header.dart';
 
 /// Lista, cria, edita e exclui os cartões de crédito.
 class CardsPage extends StatefulWidget {
@@ -87,7 +88,7 @@ class _CardsPageState extends State<CardsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Meus cartões')),
+      appBar: const AppHeader(title: 'Meus cartões'),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add_card_rounded),

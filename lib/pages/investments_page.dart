@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/investor_profile.dart';
 import '../services/investor_profile_service.dart';
 import '../widgets/invest/market_section.dart';
+import '../widgets/app_header.dart';
 
 /// Aba Investimentos: o que fazer com o dinheiro (foco do mês, carteira atual,
 /// mercado e carteira-alvo). Depende do perfil de investidor, que fica na
@@ -23,7 +24,7 @@ class _InvestmentsPageState extends State<InvestmentsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Investimentos')),
+      appBar: const AppHeader(title: 'Investimentos'),
       body: StreamBuilder<InvestorProfile?>(
         stream: _stream,
         builder: (context, snap) {

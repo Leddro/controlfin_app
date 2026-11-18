@@ -6,7 +6,7 @@ import 'package:financas_app/models/tx.dart';
 import 'package:financas_app/services/pdf_import_service.dart';
 import 'package:financas_app/widgets/invoices_card.dart';
 import 'package:financas_app/widgets/pdf_import_sheet.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 

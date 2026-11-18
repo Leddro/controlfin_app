@@ -2,7 +2,7 @@ import 'package:financas_app/models/tx.dart';
 import 'package:financas_app/models/user_settings.dart';
 import 'package:financas_app/widgets/expense_type_dialog.dart';
 import 'package:financas_app/widgets/goals_card.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

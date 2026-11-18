@@ -1,7 +1,7 @@
 import 'package:financas_app/models/investor_profile.dart';
 import 'package:financas_app/pages/investor_profile_page.dart';
 import 'package:financas_app/widgets/investor_quiz.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 InvestorProfile profileWith(Map<String, int> changes) {

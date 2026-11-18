@@ -1,6 +1,7 @@
 import 'package:financas_app/models/market/market_data.dart';
 import 'package:financas_app/widgets/invest/market_section.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:financas_app/models/market/portfolio_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -67,6 +68,7 @@ void main() {
           child: MarketSection(
               profile: profile({}),
               loader: () async => data,
+              planner: (p, d) async => PortfolioEngine.build(p, d),
               showContribution: false),
         ),
       ),
