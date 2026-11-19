@@ -6,10 +6,19 @@ name: Dados de mercado
 
 on:
   schedule:
-    # 21h30 UTC = 18h30 em Brasília, depois do fechamento da B3.
+    # Completa: 21h30 UTC = 18h30 em Brasília, depois do fechamento da B3.
     - cron: '30 21 * * *'
+    # Rápida (só cotações, Ibovespa e preço das ações): 11h, 13h, 15h e 17h
+    # em Brasília, de segunda a sexta. O GitHub pode atrasar alguns minutos.
+    - cron: '0 14,16,18,20 * * 1-5'
   # Botão "Run workflow" na aba Actions, para rodar na hora.
   workflow_dispatch:
+    inputs:
+      modo:
+        description: 'Completa (tudo) ou rápida (só cotações)'
+        type: choice
+        options: [completa, rapida]
+        default: completa
 
 concurrency:
   group: market
@@ -32,7 +41,10 @@ jobs:
         run: flutter pub get
 
       - name: Coletar e gravar
-        run: dart run tool/update_market.dart
+        # Rápida nos horários do pregão ou quando escolhida no botão.
+        run: >-
+          dart run tool/update_market.dart
+          ${{ (github.event.schedule == '0 14,16,18,20 * * 1-5' || inputs.modo == 'rapida') && '--quick' || '' }}
         env:
           ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}

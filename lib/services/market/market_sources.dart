@@ -210,6 +210,14 @@ Future<double?> brapiMarketCap(String symbol) async {
   }
 }
 
+/// Ibovespa em pontos e a variação do dia em % (brapi).
+Future<(double, double?)> fetchIbovespa() async {
+  final q = await _brapiQuote('^BVSP');
+  final ibov = (q['regularMarketPrice'] as num?)?.toDouble();
+  if (ibov == null) throw const MarketSourceException('brapi sem Ibovespa.');
+  return (ibov, (q['regularMarketChangePercent'] as num?)?.toDouble());
+}
+
 // ---------------------------------------------------------------- Macro
 
 /// Selic, IPCA e Focus (obrigatórios); dólar, juros dos EUA e Ibovespa
@@ -235,9 +243,7 @@ Future<MacroSnapshot> fetchMacro() async {
   final us10 = await optional(_alphaTreasury10y);
   double? ibov, ibovChange;
   try {
-    final q = await _brapiQuote('^BVSP');
-    ibov = (q['regularMarketPrice'] as num?)?.toDouble();
-    ibovChange = (q['regularMarketChangePercent'] as num?)?.toDouble();
+    (ibov, ibovChange) = await fetchIbovespa();
   } on MarketSourceException {
     // Segue sem o Ibovespa.
   }

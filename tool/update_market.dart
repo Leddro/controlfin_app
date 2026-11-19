@@ -7,6 +7,10 @@
 //   FIREBASE_SERVICE_ACCOUNT         JSON da conta de serviço do Firebase
 //   DRY_RUN=1                        só coleta e mostra, sem gravar
 //
+// Argumentos:
+//   --quick   modo rápido (durante o pregão): só cotações, Ibovespa e o
+//             preço das ações do ranking. Não usa a Alpha Vantage.
+//
 // Rodar no PC (PowerShell), com as chaves em tool/env.json:
 //   $env:FIREBASE_SERVICE_ACCOUNT = Get-Content conta.json -Raw
 //   dart run tool/update_market.dart --env tool/env.json
@@ -29,12 +33,13 @@ Future<void> main(List<String> args) async {
     }
   }
   final dryRun = env['DRY_RUN'] == '1';
+  final quick = args.contains('--quick');
 
   marketKeys = MarketKeys(
     alphaVantage: env['ALPHA_VANTAGE_KEY'] ?? '',
     brapi: env['BRAPI_TOKEN'] ?? '',
   );
-  if (marketKeys.alphaVantage.isEmpty) {
+  if (!quick && marketKeys.alphaVantage.isEmpty) {
     stderr.writeln('Falta ALPHA_VANTAGE_KEY.');
     exit(2);
   }
@@ -60,11 +65,24 @@ Future<void> main(List<String> args) async {
     final tickers = await firestore?.holdingTickers() ?? const <String>{};
     print('Tickers nas carteiras: ${tickers.length}');
 
-    final result = await collectMarket(
-      holdingTickers: tickers,
-      fallbackUsdBrl: await firestore?.previousUsdBrl(),
-      log: print,
-    );
+    print(quick ? 'Modo rápido (pregão).' : 'Modo completo.');
+    final previousMacro = await firestore?.readPayload('macro');
+    final result = quick
+        ? await collectQuick(
+            holdingTickers: tickers,
+            previousMacro: previousMacro is Map
+                ? Map<String, dynamic>.from(previousMacro)
+                : null,
+            previousStocks: await firestore?.readPayload('stocks') as List?,
+            log: print,
+          )
+        : await collectMarket(
+            holdingTickers: tickers,
+            fallbackUsdBrl: previousMacro is Map
+                ? (previousMacro['usdBrl'] as num?)?.toDouble()
+                : null,
+            log: print,
+          );
 
     if (firestore == null) {
       print('\nDRY_RUN: nada gravado.');
@@ -83,9 +101,11 @@ Future<void> main(List<String> args) async {
       result.errors.forEach(print);
     }
     // Sem Selic ou sem ETFs a carteira não sai: aí o robô falha (e o GitHub
-    // avisa por e-mail). Falhas em ações ou Bitcoin só geram aviso.
-    final essential =
-        result.docs.containsKey('macro') && result.docs.containsKey('etfs');
+    // avisa por e-mail). Falhas em ações ou Bitcoin só geram aviso. No modo
+    // rápido, o essencial são as cotações.
+    final essential = quick
+        ? result.docs.containsKey('quotes')
+        : result.docs.containsKey('macro') && result.docs.containsKey('etfs');
     exitCode = essential ? 0 : 1;
   } finally {
     client?.close();
@@ -138,15 +158,14 @@ class _Firestore {
     return tickers;
   }
 
-  /// Dólar gravado na última coleta (market/macro), ou nulo.
-  Future<double?> previousUsdBrl() async {
+  /// Conteúdo gravado de market/[key] (JSON já decodificado), ou nulo.
+  Future<Object?> readPayload(String key) async {
     try {
-      final res = await _http.get(Uri.parse('$_base/market/macro'));
+      final res = await _http.get(Uri.parse('$_base/market/$key'));
       if (res.statusCode != 200) return null;
       final fields = (jsonDecode(res.body) as Map)['fields'] as Map?;
       final payload = (fields?['payload'] as Map?)?['stringValue'] as String?;
-      if (payload == null) return null;
-      return ((jsonDecode(payload) as Map)['usdBrl'] as num?)?.toDouble();
+      return payload == null ? null : jsonDecode(payload);
     } catch (_) {
       return null;
     }
