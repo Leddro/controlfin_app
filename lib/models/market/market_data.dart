@@ -6,6 +6,9 @@ library;
 
 double? _d(Object? v) => v is num ? v.toDouble() : null;
 
+/// Horário gravado em UTC (com "Z"), mostrado no fuso do aparelho.
+DateTime _time(Object? v) => DateTime.parse(v as String).toLocal();
+
 /// Juros, inflação, câmbio e bolsa do dia.
 class MacroSnapshot {
   /// Meta da Selic, % ao ano (Banco Central, série 432).
@@ -48,7 +51,7 @@ class MacroSnapshot {
         usTreasury10y: _d(j['usTreasury10y']),
         ibovespa: _d(j['ibovespa']),
         ibovespaChange: _d(j['ibovespaChange']),
-        fetchedAt: DateTime.parse(j['fetchedAt'] as String),
+        fetchedAt: _time(j['fetchedAt']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -59,7 +62,7 @@ class MacroSnapshot {
         'usTreasury10y': usTreasury10y,
         'ibovespa': ibovespa,
         'ibovespaChange': ibovespaChange,
-        'fetchedAt': fetchedAt.toIso8601String(),
+        'fetchedAt': fetchedAt.toUtc().toIso8601String(),
       };
 }
 
@@ -126,7 +129,7 @@ class BitcoinSnapshot {
         metcalfeRatio: _d(j['metcalfeRatio'])!,
         stockToFlow: _d(j['stockToFlow'])!,
         s2fModelPriceUsd: _d(j['s2fModelPriceUsd'])!,
-        fetchedAt: DateTime.parse(j['fetchedAt'] as String),
+        fetchedAt: _time(j['fetchedAt']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -136,7 +139,7 @@ class BitcoinSnapshot {
         'metcalfeRatio': metcalfeRatio,
         'stockToFlow': stockToFlow,
         's2fModelPriceUsd': s2fModelPriceUsd,
-        'fetchedAt': fetchedAt.toIso8601String(),
+        'fetchedAt': fetchedAt.toUtc().toIso8601String(),
       };
 }
 

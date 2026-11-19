@@ -231,4 +231,18 @@ void main() {
     expect(barata.gordonFairPrice,
         closeTo(1.5 * 1.04 / (barata.requiredReturn - 0.04), 1e-6));
   });
+
+  test('horário dos dados de mercado vai em UTC e volta no fuso local', () {
+    final at = DateTime.utc(2026, 11, 19, 13, 52);
+    final j = MacroSnapshot(
+      selic: 13.75,
+      ipca12m: 4.6,
+      ipcaLongTerm: 4,
+      fetchedAt: at.toLocal(),
+    ).toJson();
+    expect(j['fetchedAt'], endsWith('Z'));
+    final back = MacroSnapshot.fromJson(j).fetchedAt;
+    expect(back.isUtc, isFalse);
+    expect(back.isAtSameMomentAs(at), isTrue);
+  });
 }
