@@ -25,6 +25,7 @@ import '../widgets/summary_card.dart';
 import '../widgets/upcoming_card.dart';
 import '../widgets/app_header.dart';
 import 'cards_page.dart';
+import 'community_reports_page.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -121,10 +122,29 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Adicionar'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Problemas e sugestões da comunidade, acima do Adicionar.
+          FloatingActionButton.small(
+            key: const Key('open-reports'),
+            heroTag: 'reports-fab',
+            tooltip: 'Problemas e sugestões',
+            backgroundColor: const Color(0xFF262626),
+            foregroundColor: const Color(0xFFFBBF24),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const CommunityReportsPage())),
+            child: const Icon(Icons.campaign_rounded),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add-fab',
+            onPressed: () => _openForm(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Adicionar'),
+          ),
+        ],
       ),
       body: StreamBuilder<UserSettings>(
         stream: _settingsStream,

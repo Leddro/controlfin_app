@@ -9,7 +9,10 @@ import '../services/avatar_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/app_header.dart';
 import '../services/notification_samples_service.dart';
+import '../services/community_report_service.dart';
 import 'bank_notifications_page.dart';
+import 'community_reports_page.dart';
+import 'reports_admin_page.dart';
 import 'dev_review_page.dart';
 import 'cards_page.dart';
 
@@ -27,6 +30,12 @@ class _AccountPageState extends State<AccountPage> {
   late final _stream = _auth.userChanges();
   final _avatar = AvatarService();
   late final _avatarStream = _avatar.watch();
+
+  /// Só aberto para o desenvolvedor (a contagem de reports novos).
+  late final Stream<List<CommunityReport>> _reportsStream =
+      CommunityReportService()
+          .watchAll()
+          .handleError((_) {}); // sem as regras: só não mostra a contagem
   bool _savingPhoto = false;
 
   void _toast(String text) {
@@ -232,6 +241,15 @@ class _AccountPageState extends State<AccountPage> {
                           MaterialPageRoute(builder: (_) => const CardsPage())),
                     ),
                     ListTile(
+                      leading: const Icon(Icons.campaign_rounded),
+                      title: const Text('Problemas e sugestões'),
+                      subtitle: const Text(
+                          'Avise de um erro ou mande uma ideia para o app'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const CommunityReportsPage())),
+                    ),
+                    ListTile(
                       leading: const Icon(Icons.notifications_active_rounded),
                       title: const Text('Notificações dos bancos'),
                       subtitle: const Text(
@@ -255,6 +273,29 @@ class _AccountPageState extends State<AccountPage> {
                         onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                                 builder: (_) => const DevReviewPage())),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.forum_rounded),
+                        title: const Text('Reports da comunidade'),
+                        subtitle: StreamBuilder<List<CommunityReport>>(
+                          stream: _reportsStream,
+                          builder: (context, snap) {
+                            final news = snap.data
+                                    ?.where((r) =>
+                                        r.status == ReportStatus.received)
+                                    .length ??
+                                0;
+                            return Text(news > 0
+                                ? '$news ${news == 1 ? 'novo' : 'novos'} para '
+                                    'ler'
+                                : 'Problemas e sugestões enviados pelos '
+                                    'usuários');
+                          },
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const ReportsAdminPage())),
                       ),
                     ]),
                   ],
