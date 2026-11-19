@@ -60,7 +60,11 @@ Future<void> main(List<String> args) async {
     final tickers = await firestore?.holdingTickers() ?? const <String>{};
     print('Tickers nas carteiras: ${tickers.length}');
 
-    final result = await collectMarket(holdingTickers: tickers, log: print);
+    final result = await collectMarket(
+      holdingTickers: tickers,
+      fallbackUsdBrl: await firestore?.previousUsdBrl(),
+      log: print,
+    );
 
     if (firestore == null) {
       print('\nDRY_RUN: nada gravado.');
@@ -132,6 +136,20 @@ class _Firestore {
       }
     }
     return tickers;
+  }
+
+  /// Dólar gravado na última coleta (market/macro), ou nulo.
+  Future<double?> previousUsdBrl() async {
+    try {
+      final res = await _http.get(Uri.parse('$_base/market/macro'));
+      if (res.statusCode != 200) return null;
+      final fields = (jsonDecode(res.body) as Map)['fields'] as Map?;
+      final payload = (fields?['payload'] as Map?)?['stringValue'] as String?;
+      if (payload == null) return null;
+      return ((jsonDecode(payload) as Map)['usdBrl'] as num?)?.toDouble();
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Mesmo formato que o app lê: payload (JSON em texto) e fetchedAt.

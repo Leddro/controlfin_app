@@ -34,12 +34,32 @@ class MarketSourceException implements Exception {
 
 const _timeout = Duration(seconds: 20);
 
-Future<Object?> _getJson(Uri uri, {Map<String, String>? headers}) async {
-  final http.Response res;
+Future<Object?> _getJson(Uri uri,
+    {Map<String, String>? headers, bool retry = true}) async {
+  http.Response res;
   try {
-    res = await http.get(uri, headers: headers).timeout(_timeout);
+    res = await http.get(uri, headers: {
+      // Pede sempre a resposta nova: o cache do Banco Central chegou a
+      // responder 304 (sem corpo) aos servidores do GitHub Actions.
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      ...?headers,
+    }).timeout(_timeout);
   } catch (_) {
     throw MarketSourceException('Sem resposta de ${uri.host}.');
+  }
+  if (res.statusCode == 304 && retry) {
+    // Mesmo pedido com um parâmetro que muda a cada vez: o cache não acha
+    // cópia guardada e devolve o dado.
+    return _getJson(
+      uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        '_': '${DateTime.now().millisecondsSinceEpoch}',
+      }),
+      headers: headers,
+      retry: false,
+    );
   }
   if (res.statusCode == 429) {
     throw MarketSourceException('Limite de requisições de ${uri.host}.',

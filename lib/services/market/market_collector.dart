@@ -18,8 +18,11 @@ class CollectedMarket {
   const CollectedMarket(this.docs, this.errors);
 }
 
+/// [fallbackUsdBrl]: dólar da última coleta, para converter os balanços em
+/// dólar (Petrobras, Vale) se o macro de hoje falhar.
 Future<CollectedMarket> collectMarket({
   Iterable<String> holdingTickers = const [],
+  double? fallbackUsdBrl,
   void Function(String)? log,
 }) async {
   final docs = <String, Object>{};
@@ -56,7 +59,7 @@ Future<CollectedMarket> collectMarket({
                     .map((t) => t.toUpperCase())
                     .where(isCompanyStock),
               },
-              usdBrl?.toDouble(),
+              usdBrl?.toDouble() ?? fallbackUsdBrl,
             ))
               s.toJson(),
           ]);
