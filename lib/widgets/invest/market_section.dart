@@ -1,14 +1,19 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/investor_profile.dart';
+import '../../models/market/contribution.dart';
 import '../../models/market/market_data.dart';
 import '../../models/market/portfolio_engine.dart';
+import '../../models/market/stock_advice.dart';
+import '../../services/holdings_service.dart';
 import '../../services/market/market_repository.dart';
+import '../../services/market/market_sources.dart';
 import 'contribution_section.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
@@ -46,16 +51,47 @@ class MarketSection extends StatefulWidget {
   /// um cálculo direto, porque o relógio simulado não espera o isolate.
   final Future<PortfolioPlan?> Function(InvestorProfile, MarketData)? planner;
 
+  /// Carteira atual, para avaliar as ações que o usuário já tem. Padrão: a
+  /// do Firestore quando [showContribution]; sem ela, carteira vazia.
+  final Stream<List<Holding>>? holdings;
+
+  /// Busca no Yahoo os dados de ações da carteira que o robô ainda não
+  /// coletou. Padrão: só no celular (o navegador bloqueia o Yahoo).
+  final Future<StockQuote> Function(String ticker, double? usdBrl)?
+      stockFetcher;
+
   const MarketSection({
     super.key,
     required this.profile,
     this.loader,
     this.showContribution = true,
     this.planner,
+    this.holdings,
+    this.stockFetcher,
   });
 
   @override
   State<MarketSection> createState() => _MarketSectionState();
+}
+
+/// Por que a carteira-alvo não saiu, com o motivo real: erro no cálculo,
+/// leitura bloqueada, robô sem dados ou só a Selic/Ibovespa faltando.
+String _whyNoPlan(Object? error, MarketData data) {
+  if (error != null) {
+    return 'Não foi possível calcular a carteira agora. Toque em atualizar '
+        'para tentar de novo.';
+  }
+  if (data.macro == null && data.etfs.isEmpty && data.warnings.isNotEmpty) {
+    return data.warnings.first;
+  }
+  final missing = [
+    if (data.macro == null) 'a Selic',
+    if (data.etfs[AssetClass.brStocks.symbol] == null)
+      'o histórico do Ibovespa (BOVA11)',
+  ];
+  return 'Não foi possível montar a carteira agora: falta${missing.length > 1 ? 'm' : ''} '
+      '${missing.isEmpty ? 'parte dos dados de mercado' : missing.join(' e ')}. '
+      'Tente atualizar mais tarde.';
 }
 
 /// Calcula a carteira-alvo. Função de topo para rodar em outro isolate.
@@ -64,6 +100,25 @@ PortfolioPlan? _buildPlan((InvestorProfile, MarketData) args) =>
 
 class _MarketSectionState extends State<MarketSection> {
   late Future<(MarketData, PortfolioPlan?)> _future = _load();
+
+  List<Holding> _holdings = const [];
+  StreamSubscription<List<Holding>>? _holdingsSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final stream = widget.holdings ??
+        (widget.showContribution ? HoldingsService().watch() : null);
+    _holdingsSub = stream?.listen((h) {
+      if (mounted) setState(() => _holdings = h);
+    }, onError: (_) {});
+  }
+
+  @override
+  void dispose() {
+    _holdingsSub?.cancel();
+    super.dispose();
+  }
 
   /// Busca o mercado e calcula a carteira uma vez só. A otimização leva
   /// centenas de milissegundos: roda fora da thread da interface para a
@@ -113,12 +168,9 @@ class _MarketSectionState extends State<MarketSection> {
               const SizedBox(height: 16),
             ],
             if (plan == null)
-              const _Card(
+              _Card(
                 title: 'Carteira-alvo do seu perfil',
-                child: Text(
-                  'Não foi possível montar a carteira agora: faltam a Selic '
-                  'ou o histórico do Ibovespa. Tente atualizar mais tarde.',
-                ),
+                child: Text(_whyNoPlan(snap.error, data)),
               )
             else ...[
               _PortfolioCard(plan: plan),
@@ -132,10 +184,15 @@ class _MarketSectionState extends State<MarketSection> {
                   plan: plan,
                 ),
               ],
-              if (plan.stocks.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                _StocksCard(plan: plan),
-              ],
+              _StocksCard(
+                plan: plan,
+                data: data,
+                holdings: _holdings,
+                fetcher: widget.stockFetcher ??
+                    (kIsWeb
+                        ? null
+                        : (t, usd) => fetchStockQuote(t, usdBrl: usd)),
+              ),
               const SizedBox(height: 16),
               _MethodCard(plan: plan, macro: data.macro!),
             ],
@@ -589,59 +646,305 @@ class _BitcoinCard extends StatelessWidget {
 
 // ---------------------------------------------------------------- Ações
 
-class _StocksCard extends StatelessWidget {
-  final PortfolioPlan plan;
+/// Ações de empresas da carteira (pelas classes de ações) e o valor de cada.
+Map<String, double> heldStockValues(
+    List<Holding> holdings, double? Function(String) priceOf) {
+  const stockClasses = {
+    AssetClass.brStocks,
+    AssetClass.smallCaps,
+    AssetClass.dividends,
+  };
+  final out = <String, double>{};
+  for (final h in holdings) {
+    if (!h.isTicker ||
+        !isCompanyStock(h.ticker) ||
+        !stockClasses.contains(h.assetClass)) {
+      continue;
+    }
+    out[h.ticker] = (out[h.ticker] ?? 0) + h.value(priceOf(h.ticker));
+  }
+  return out;
+}
 
-  const _StocksCard({required this.plan});
+class _StocksCard extends StatefulWidget {
+  final PortfolioPlan plan;
+  final MarketData data;
+  final List<Holding> holdings;
+  final Future<StockQuote> Function(String ticker, double? usdBrl)? fetcher;
+
+  const _StocksCard({
+    required this.plan,
+    required this.data,
+    required this.holdings,
+    required this.fetcher,
+  });
+
+  @override
+  State<_StocksCard> createState() => _StocksCardState();
+}
+
+class _StocksCardState extends State<_StocksCard> {
+  /// Ações da carteira buscadas na hora (nulo: buscando ou falhou).
+  final Map<String, StockQuote?> _live = {};
+
+  List<StockIdea>? _ideas;
+  String _ideasKey = '';
+
+  void _fetchMissing(Iterable<String> tickers) {
+    final fetcher = widget.fetcher;
+    if (fetcher == null) return;
+    final known = {for (final s in widget.data.stocks) s.symbol};
+    final missing = tickers
+        .where((t) => !known.contains(t) && !_live.containsKey(t))
+        .toList();
+    if (missing.isEmpty) return;
+    for (final t in missing) {
+      _live[t] = null;
+    }
+    () async {
+      for (final t in missing) {
+        StockQuote? q;
+        try {
+          q = await fetcher(t, widget.data.macro?.usdBrl);
+        } catch (_) {
+          // Fica "sem dados" até o robô coletar.
+        }
+        if (!mounted) return;
+        if (q != null) setState(() => _live[t] = q);
+      }
+    }();
+  }
+
+  /// Ranking do robô; com ações buscadas na hora, refaz o ranking (é rápido:
+  /// não tem otimização).
+  List<StockIdea> _rank() {
+    final extra = [
+      for (final q in _live.values)
+        if (q != null) q,
+    ];
+    if (extra.isEmpty) return widget.plan.stocks;
+    final key = extra.map((q) => q.symbol).join(',');
+    if (_ideas != null && key == _ideasKey) return _ideas!;
+    final market = widget.data.etfs[AssetClass.brStocks.symbol];
+    final macro = widget.data.macro;
+    if (market == null || macro == null) return widget.plan.stocks;
+    _ideasKey = key;
+    return _ideas = PortfolioEngine.rankStocks(
+        [...widget.data.stocks, ...extra], market, macro);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final top = plan.stocks.take(5).toList();
-    final rest = plan.stocks.skip(5).toList();
-    final noStocks = !plan.weights.keys.any((c) =>
+    final quotes = widget.data.quotes;
+    final ideas = _rank();
+    final byTicker = {for (final i in ideas) i.quote.symbol: i};
+    final held = heldStockValues(
+        widget.holdings, (t) => quotes[t] ?? byTicker[t]?.quote.price);
+    _fetchMissing(held.keys);
+    if (ideas.isEmpty && held.isEmpty) return const SizedBox.shrink();
+
+    final targetHasStocks = widget.plan.weights.keys.any((c) =>
         c == AssetClass.brStocks ||
         c == AssetClass.smallCaps ||
         c == AssetClass.dividends);
-    return _Card(
-      title: 'Ações em destaque',
-      subtitle: 'Ranking por preço justo de Gordon (com o retorno exigido '
-          'pelo CAPM) e pelos fatores valor e tamanho de Fama-French.',
+    final advice = adviseStocks(
+      ideas: ideas,
+      heldValues: held,
+      targetHasStocks: targetHasStocks,
+    );
+    Widget header(String text) => Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 10),
+          child: Text(text,
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: _Card(
+        title: 'Ações para a sua carteira',
+        subtitle: 'Preço justo por Graham (lucro e patrimônio) e por Gordon '
+            '(proventos), olhando as ações que você já tem.',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(advice.summary, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 12),
+            if (advice.held.isNotEmpty) ...[
+              header('Suas ações'),
+              for (final r in advice.held) _HeldRow(review: r),
+            ],
+            if (ideas.isNotEmpty) ...[
+              header(advice.held.isEmpty
+                  ? 'Mais bem avaliadas'
+                  : 'Para diversificar'),
+              for (final s in advice.suggestions) _SuggestionRow(item: s),
+              if (advice.suggestions.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Nenhuma empresa do ranking está perto do preço justo '
+                    'agora. Para a parte de ações, os ETFs da carteira-alvo '
+                    'continuam sendo o caminho.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+            ],
+            if (ideas.isNotEmpty)
+              Theme(
+                data: theme.copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('Ranking completo (${ideas.length} ações)',
+                      style: theme.textTheme.bodyMedium),
+                  children: [
+                    for (var i = 0; i < ideas.length; i++)
+                      _StockRow(
+                        rank: i + 1,
+                        idea: ideas[i],
+                        owned: held.containsKey(ideas[i].quote.symbol),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'Graham = √(22,5 × lucro por ação × patrimônio por ação): no '
+              'máximo P/L 15 e P/VP 1,5; ele pedia 25% de desconto como '
+              'margem de segurança. Gordon = proventos de 12 meses × (1 + g) '
+              '÷ (k − g), com g = IPCA de longo prazo e k pelo CAPM. Graham '
+              'ignora os juros; Gordon pesa os juros altos. Dados do Yahoo '
+              'Finance e da brapi. Não é recomendação de compra.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _signedPct(double v) => '${v >= 0 ? '+' : ''}${_pct(v, digits: 0)}';
+
+/// "Graham R$ 39,71 (+181%) • Gordon R$ 12,00 (-15%)".
+String _fairLine(StockIdea i) {
+  final graham = i.grahamFairPrice != null
+      ? 'Graham ${_brl.format(i.grahamFairPrice)} '
+          '(${_signedPct(i.grahamUpside!)})'
+      : i.hasLoss
+          ? 'Graham: teve prejuízo'
+          : 'Graham: sem dados';
+  final gordon = i.gordonFairPrice != null
+      ? 'Gordon ${_brl.format(i.gordonFairPrice)} '
+          '(${_signedPct(i.gordonUpside!)})'
+      : 'Gordon: sem proventos';
+  return '$graham • $gordon';
+}
+
+Color _upColor(BuildContext context, double? up) => up == null
+    ? Theme.of(context).colorScheme.outline
+    : up >= 0
+        ? const Color(0xFF4ADE80)
+        : const Color(0xFFF87171);
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _Chip(this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: color, fontWeight: FontWeight.w700, fontSize: 12)),
+      );
+}
+
+class _HeldRow extends StatelessWidget {
+  final HeldStockReview review;
+
+  const _HeldRow({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final (label, color) = switch (review.verdict) {
+      HeldVerdict.reinforce => ('Reforçar', const Color(0xFF4ADE80)),
+      HeldVerdict.keep => ('Manter', const Color(0xFFFBBF24)),
+      HeldVerdict.hold => ('Não aumentar', const Color(0xFFF87171)),
+      HeldVerdict.noData => ('Sem dados', const Color(0xFFA1A1AA)),
+    };
+    final idea = review.idea;
+    return Padding(
+      key: Key('held-${review.ticker}'),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (noStocks)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Sua carteira sugerida não tem ações agora. O ranking fica '
-                'como estudo.',
-                style: theme.textTheme.bodySmall,
-              ),
+          Row(children: [
+            Expanded(
+              child: Text(review.ticker,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
-          for (var i = 0; i < top.length; i++)
-            _StockRow(rank: i + 1, idea: top[i]),
-          if (rest.isNotEmpty)
-            Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text('Ver as outras ${rest.length}',
-                    style: theme.textTheme.bodyMedium),
-                children: [
-                  for (var i = 0; i < rest.length; i++)
-                    _StockRow(rank: i + 6, idea: rest[i]),
-                ],
-              ),
-            ),
-          const SizedBox(height: 8),
+            _Chip(label, color),
+          ]),
           Text(
-            'Preço justo de Gordon = proventos de 12 meses × (1 + g) ÷ (k − g), '
-            'com g = IPCA esperado de longo prazo e k = Selic − spread + β × '
-            'prêmio Brasil. Com juros altos, poucas ações passam nesse teste. '
-            'Dados do Yahoo Finance e da brapi. Não é recomendação de compra.',
-            style: theme.textTheme.bodySmall,
+            review.value > 0
+                ? '${_brl.format(review.value)} • '
+                    '${_pct(review.share, digits: 0)} das suas ações'
+                : 'Sem cotação para calcular o valor',
+            style: small,
           ),
+          if (idea != null) Text(_fairLine(idea), style: small),
+          const SizedBox(height: 2),
+          Text(review.reason),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestionRow extends StatelessWidget {
+  final StockSuggestion item;
+
+  const _SuggestionRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final idea = item.idea;
+    final up = idea.upside;
+    return Padding(
+      key: Key('suggest-${idea.quote.symbol}'),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text(idea.quote.symbol,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            if (up != null)
+              Text(_signedPct(up),
+                  style: TextStyle(
+                      color: _upColor(context, up),
+                      fontWeight: FontWeight.w700)),
+          ]),
+          Text(_brl.format(idea.quote.price), style: small),
+          Text(_fairLine(idea), style: small),
+          for (final r in item.reasons)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('• $r'),
+            ),
         ],
       ),
     );
@@ -651,18 +954,14 @@ class _StocksCard extends StatelessWidget {
 class _StockRow extends StatelessWidget {
   final int rank;
   final StockIdea idea;
+  final bool owned;
 
-  const _StockRow({required this.rank, required this.idea});
+  const _StockRow({required this.rank, required this.idea, this.owned = false});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final up = idea.upside;
-    final upColor = up == null
-        ? theme.colorScheme.outline
-        : up >= 0
-            ? const Color(0xFF4ADE80)
-            : const Color(0xFFF87171);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -674,30 +973,30 @@ class _StockRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(idea.quote.symbol,
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              Row(children: [
+                Text(idea.quote.symbol,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                if (owned) ...[
+                  const SizedBox(width: 6),
+                  const _Chip('Você tem', Color(0xFF38BDF8)),
+                ],
+              ]),
               Text(
                 '${_brl.format(idea.quote.price)} • DY '
                 '${_pct(idea.quote.dividendYield)} • β '
                 '${idea.beta.toStringAsFixed(2).replaceAll('.', ',')}',
                 style: theme.textTheme.bodySmall,
               ),
+              Text(_fairLine(idea), style: theme.textTheme.bodySmall),
             ],
           ),
         ),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(
-            idea.gordonFairPrice == null
-                ? 'Sem proventos'
-                : 'Justo ${_brl.format(idea.gordonFairPrice)}',
-            style: theme.textTheme.bodySmall,
-          ),
-          if (up != null)
-            Text(
-              '${up >= 0 ? '+' : ''}${_pct(up, digits: 0)}',
-              style: TextStyle(color: upColor, fontWeight: FontWeight.w700),
-            ),
-        ]),
+        const SizedBox(width: 8),
+        Text(
+          up == null ? '—' : _signedPct(up),
+          style: TextStyle(
+              color: _upColor(context, up), fontWeight: FontWeight.w700),
+        ),
       ]),
     );
   }
@@ -781,6 +1080,15 @@ class _MethodCard extends StatelessWidget {
                   'yield e tamanho = valor de mercado.',
             ),
             section(
+              'Benjamin Graham (1949)',
+              'Em "O Investidor Inteligente", Graham só pagava até 15 vezes o '
+                  'lucro e 1,5 vez o patrimônio: preço justo = √(22,5 × LPA × '
+                  'VPA). Empresa com prejuízo fica de fora. Ele pedia ainda '
+                  '${_pct(Assumptions.marginOfSafety, digits: 0)} de desconto '
+                  '(margem de segurança) para comprar. No ranking de ações, o '
+                  'preço justo é a média de Graham e Gordon.',
+            ),
+            section(
               'Myron Gordon e Eli Shapiro (1956)',
               'Retorno = dividend yield × (1 + g) + g, com g = IPCA esperado '
                   'de longo prazo (${_pct(macro.ipcaLongTerm / 100)}, Focus). '
@@ -805,7 +1113,8 @@ class _MethodCard extends StatelessWidget {
             Text(
               'Fontes: Banco Central (Selic, IPCA, Focus), Alpha Vantage '
               '(ETFs, dólar, juros dos EUA), brapi (Ibovespa, valor de '
-              'mercado), Yahoo Finance (ações e proventos) e CoinMetrics '
+              'mercado), Yahoo Finance (ações, proventos, lucro e patrimônio) e '
+              'CoinMetrics '
               '(rede do Bitcoin). Conteúdo educativo, não é recomendação de '
               'investimento (Resolução CVM 20/2021).',
               style: theme.textTheme.bodySmall,

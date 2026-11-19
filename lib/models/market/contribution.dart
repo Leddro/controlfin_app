@@ -13,6 +13,8 @@ import '../tx.dart';
 import '../user_settings.dart';
 import 'portfolio_engine.dart';
 
+export 'tickers.dart';
+
 /// Uma posição: ação/ETF/FII (ticker e quantidade) ou um valor em renda fixa
 /// fora da reserva (sem ticker, só [manualValue]).
 class Holding {
@@ -53,51 +55,6 @@ class Holding {
         'quantity': quantity,
         if (manualValue != null) 'manualValue': manualValue,
       };
-}
-
-const _etfClasses = {
-  'BOVA11': AssetClass.brStocks,
-  'BOVV11': AssetClass.brStocks,
-  'BOVB11': AssetClass.brStocks,
-  'PIBB11': AssetClass.brStocks,
-  'SMAL11': AssetClass.smallCaps,
-  'SMAC11': AssetClass.smallCaps,
-  'DIVO11': AssetClass.dividends,
-  'NDIV11': AssetClass.dividends,
-  'XFIX11': AssetClass.reits,
-  'IVVB11': AssetClass.global,
-  'SPXI11': AssetClass.global,
-  'NASD11': AssetClass.global,
-  'WRLD11': AssetClass.global,
-  'QBTC11': AssetClass.bitcoin,
-  'BITH11': AssetClass.bitcoin,
-  'HASH11': AssetClass.bitcoin,
-};
-
-/// Units de empresas que terminam em 11 mas são ações, não FIIs.
-const _stockUnits = {
-  'TAEE11',
-  'KLBN11',
-  'SAPR11',
-  'SANB11',
-  'ALUP11',
-  'BPAC11',
-  'ENGI11',
-  'TIET11',
-  'SULA11',
-  'IGTI11',
-  'CPLE11',
-  'BRBI11',
-  'AESB11',
-};
-
-/// Palpite da classe pelo ticker (o usuário pode trocar).
-AssetClass guessAssetClass(String ticker) {
-  final t = ticker.trim().toUpperCase();
-  final etf = _etfClasses[t];
-  if (etf != null) return etf;
-  if (t.endsWith('11') && !_stockUnits.contains(t)) return AssetClass.reits;
-  return AssetClass.brStocks;
 }
 
 /// Média mensal dos gastos que contam na meta Essenciais, nos meses que

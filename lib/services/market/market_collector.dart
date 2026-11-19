@@ -5,6 +5,7 @@ library;
 
 import '../../models/market/market_data.dart';
 import '../../models/market/portfolio_engine.dart';
+import '../../models/market/tickers.dart';
 import 'market_sources.dart';
 
 /// Documentos da coleção "market": nome → conteúdo (vira JSON no campo
@@ -42,10 +43,22 @@ Future<CollectedMarket> collectMarket({
               s: (await alphaMonthlyAdjusted(s)).toJson(),
           });
   await step('bitcoin', () async => (await fetchBitcoin()).toJson());
+  // Universo do ranking + ações de empresas das carteiras, para avaliar o
+  // que cada usuário já tem. O câmbio converte balanços em dólar.
+  final usdBrl = (docs['macro'] as Map?)?['usdBrl'] as num?;
   await step(
       'stocks',
       () async => [
-            for (final s in await _stocks()) s.toJson(),
+            for (final s in await _stocks(
+              {
+                ...stockUniverse,
+                ...holdingTickers
+                    .map((t) => t.toUpperCase())
+                    .where(isCompanyStock),
+              },
+              usdBrl?.toDouble(),
+            ))
+              s.toJson(),
           ]);
 
   // Preços de tudo que aparece nas carteiras e nas sugestões de compra.
@@ -70,19 +83,11 @@ Future<CollectedMarket> collectMarket({
   return CollectedMarket(docs, errors);
 }
 
-Future<List<StockQuote>> _stocks() async {
+Future<List<StockQuote>> _stocks(Set<String> tickers, double? usdBrl) async {
   final out = <StockQuote>[];
-  for (final t in stockUniverse) {
+  for (final t in tickers) {
     try {
-      final q = await yahooStock(t);
-      final cap = await brapiMarketCap(t);
-      out.add(StockQuote(
-        symbol: q.symbol,
-        price: q.price,
-        dividends12m: q.dividends12m,
-        marketCap: cap,
-        history: q.history,
-      ));
+      out.add(await fetchStockQuote(t, usdBrl: usdBrl));
     } on MarketSourceException {
       // Pula a ação que falhar; o ranking segue com as outras.
     }

@@ -151,6 +151,12 @@ class StockQuote {
   /// Valor de mercado em reais (brapi), para o fator tamanho.
   final double? marketCap;
 
+  /// Lucro líquido dos últimos 12 meses da empresa toda, em reais (Yahoo).
+  final double? netIncome;
+
+  /// Patrimônio líquido da empresa toda, em reais (Yahoo).
+  final double? equity;
+
   /// Fechamentos mensais ajustados, para o beta.
   final PriceSeries history;
 
@@ -159,16 +165,34 @@ class StockQuote {
     required this.price,
     required this.dividends12m,
     this.marketCap,
+    this.netIncome,
+    this.equity,
     required this.history,
   });
 
   double get dividendYield => price > 0 ? dividends12m / price : 0;
+
+  /// Parte de um papel na empresa (preço ÷ valor de mercado). Pelo valor de
+  /// mercado, e não pelo número de ações, a conta também vale para units
+  /// (TAEE11 = 3 ações) e para empresas que publicam o balanço em dólar.
+  double? get _perPaper =>
+      marketCap != null && marketCap! > 0 ? price / marketCap! : null;
+
+  /// Lucro por ação (LPA) dos últimos 12 meses.
+  double? get earningsPerShare =>
+      _perPaper == null || netIncome == null ? null : netIncome! * _perPaper!;
+
+  /// Valor patrimonial por ação (VPA).
+  double? get bookValuePerShare =>
+      _perPaper == null || equity == null ? null : equity! * _perPaper!;
 
   factory StockQuote.fromJson(Map<String, dynamic> j) => StockQuote(
         symbol: j['symbol'] as String,
         price: _d(j['price'])!,
         dividends12m: _d(j['dividends12m']) ?? 0,
         marketCap: _d(j['marketCap']),
+        netIncome: _d(j['netIncome']),
+        equity: _d(j['equity']),
         history: PriceSeries.fromJson(
             Map<String, dynamic>.from(j['history'] as Map)),
       );
@@ -178,6 +202,8 @@ class StockQuote {
         'price': price,
         'dividends12m': dividends12m,
         'marketCap': marketCap,
+        'netIncome': netIncome,
+        'equity': equity,
         'history': history.toJson(),
       };
 }

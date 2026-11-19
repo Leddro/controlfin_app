@@ -324,7 +324,9 @@ BitcoinSnapshot bitcoinFromHistory(List<BtcDay> days) {
 
 // ---------------------------------------------------------------- Yahoo Finance
 
-/// Ações do ranking: pagadoras de dividendos e empresas grandes da B3.
+/// Ações do ranking: pagadoras de dividendos, empresas grandes da B3 e
+/// alguns setores a mais (varejo, saúde, tecnologia, saneamento) para as
+/// sugestões conseguirem diversificar a carteira do usuário.
 const stockUniverse = [
   'PETR4',
   'VALE3',
@@ -344,6 +346,16 @@ const stockUniverse = [
   'CSMG3',
   'CXSE3',
   'B3SA3',
+  'RENT3',
+  'RADL3',
+  'SUZB3',
+  'PRIO3',
+  'EQTL3',
+  'SBSP3',
+  'TOTS3',
+  'LREN3',
+  'GGBR4',
+  'BPAC11',
 ];
 
 /// Preço, proventos de 12 meses e histórico mensal pelo Yahoo Finance
@@ -412,5 +424,89 @@ Future<StockQuote> yahooStock(String ticker) async {
     price: price,
     dividends12m: total,
     history: PriceSeries(ticker, monthly),
+  );
+}
+
+/// Lucro líquido de 12 meses e patrimônio líquido da empresa, em reais.
+typedef Fundamentals = ({double? netIncome, double? equity, double? shares});
+
+/// Lê a resposta de fundamentals-timeseries do Yahoo: o valor mais recente
+/// de cada série. Balanço em dólar (Petrobras, Vale...) é convertido por
+/// [usdBrl]; sem câmbio, ou em outra moeda, o valor fica nulo.
+Fundamentals parseYahooFundamentals(Object? json, {double? usdBrl}) {
+  final latest = <String, (double, String?)>{};
+  final results =
+      (((json as Map?)?['timeseries'] as Map?)?['result'] as List?) ?? const [];
+  for (final r in results) {
+    final type = (((r as Map)['meta'] as Map?)?['type'] as List?)?.first;
+    if (type is! String) continue;
+    final points = [...?(r[type] as List?)?.whereType<Map>()];
+    points.sort((a, b) => '${a['asOfDate']}'.compareTo('${b['asOfDate']}'));
+    for (final p in points.reversed) {
+      final raw = (p['reportedValue'] as Map?)?['raw'];
+      if (raw is num) {
+        latest[type] = (raw.toDouble(), p['currencyCode'] as String?);
+        break;
+      }
+    }
+  }
+  double? money(String type) {
+    final v = latest[type];
+    if (v == null) return null;
+    return switch (v.$2) {
+      null || 'BRL' => v.$1,
+      'USD' => usdBrl == null ? null : v.$1 * usdBrl,
+      _ => null,
+    };
+  }
+
+  return (
+    netIncome: money('trailingNetIncomeCommonStockholders'),
+    equity: money('quarterlyCommonStockEquity'),
+    shares: latest['quarterlyOrdinarySharesNumber']?.$1,
+  );
+}
+
+/// Lucro e patrimônio pelo Yahoo Finance (sem chave; não funciona na web).
+Future<Fundamentals> yahooFundamentals(String ticker, {double? usdBrl}) async {
+  final now = DateTime.now();
+  int secs(DateTime d) => d.millisecondsSinceEpoch ~/ 1000;
+  final data = await _getJson(
+    Uri.https('query1.finance.yahoo.com',
+        '/ws/fundamentals-timeseries/v1/finance/timeseries/$ticker.SA', {
+      'type': 'trailingNetIncomeCommonStockholders,quarterlyCommonStockEquity,'
+          'quarterlyOrdinarySharesNumber',
+      // Balanços de até 18 meses atrás; mais velho que isso não serve.
+      'period1': '${secs(now.subtract(const Duration(days: 550)))}',
+      'period2': '${secs(now)}',
+    }),
+    headers: const {'User-Agent': 'Mozilla/5.0'},
+  );
+  return parseYahooFundamentals(data, usdBrl: usdBrl);
+}
+
+/// Tudo de uma ação para o ranking: preço, proventos, histórico, valor de
+/// mercado (brapi, só com chave) e lucro e patrimônio (Yahoo). Sem a brapi,
+/// o valor de mercado sai de preço × ações, o que não vale para units.
+Future<StockQuote> fetchStockQuote(String ticker, {double? usdBrl}) async {
+  final q = await yahooStock(ticker);
+  var cap = marketKeys.brapi.isEmpty ? null : await brapiMarketCap(ticker);
+  Fundamentals f = (netIncome: null, equity: null, shares: null);
+  try {
+    f = await yahooFundamentals(ticker, usdBrl: usdBrl);
+  } on MarketSourceException {
+    // Segue sem Graham para esta ação.
+  }
+  if (cap == null && f.shares != null && !ticker.endsWith('11')) {
+    cap = q.price * f.shares!;
+  }
+  return StockQuote(
+    symbol: q.symbol,
+    price: q.price,
+    dividends12m: q.dividends12m,
+    marketCap: cap,
+    netIncome: f.netIncome,
+    equity: f.equity,
+    history: q.history,
   );
 }

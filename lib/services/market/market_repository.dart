@@ -16,6 +16,11 @@ class MarketRepository {
   MarketRepository({FirebaseFirestore? db})
       : _db = db ?? FirebaseFirestore.instance;
 
+  /// Leitura bloqueada pelas regras do Firestore.
+  static const permissionDeniedWarning =
+      'Sem permissão para ler os dados de mercado. As regras do Firestore '
+      'precisam liberar a leitura da coleção "market" para usuários logados.';
+
   /// Dados com mais de 3 dias: avisa que o robô pode ter parado.
   static const staleAfter = Duration(days: 3);
 
@@ -32,6 +37,15 @@ class MarketRepository {
           docs[d.id] = (jsonDecode(payload), at.toDate());
         }
       }
+    } on FirebaseException catch (e) {
+      debugPrint('Mercado: $e');
+      // Regras do Firestore sem a leitura de "market": não é falta de dado.
+      return MarketData(warnings: [
+        e.code == 'permission-denied'
+            ? permissionDeniedWarning
+            : 'Não foi possível ler os dados de mercado (${e.code}). '
+                'Confira a internet e tente de novo.',
+      ]);
     } catch (e) {
       debugPrint('Mercado: $e');
       return const MarketData(

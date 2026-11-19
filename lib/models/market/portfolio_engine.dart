@@ -10,6 +10,9 @@
 /// * Exterior: juros dos EUA + prêmio maduro de Damodaran + desvalorização
 ///   esperada do real (diferença de inflação).
 ///
+/// Ações individuais: preço justo de Gordon (proventos) e de Graham
+/// (lucro e patrimônio), mais os fatores de Fama-French.
+///
 /// Os pesos saem de Markowitz (média-variância) com o γ de Arrow-Pratt do
 /// perfil e limites por perfil. Bitcoin entra à parte (satélite), ajustado
 /// pelo sinal de Metcalfe.
@@ -49,7 +52,25 @@ class Assumptions {
 
   /// Volatilidade anual usada para o Bitcoin nas contas da carteira.
   static const bitcoinVol = 0.60;
+
+  /// Benjamin Graham, "O Investidor Inteligente" (1949, ed. 1973): pagar no
+  /// máximo P/L 15 × P/VP 1,5 = 22,5.
+  static const grahamMultiplier = 22.5;
+
+  /// Margem de segurança de Graham: comprar com desconto de pelo menos 25%
+  /// sobre o valor estimado.
+  static const marginOfSafety = 0.25;
 }
+
+/// Preço justo de Graham: √(22,5 × LPA × VPA). Nulo com prejuízo ou
+/// patrimônio negativo (Graham descartaria a empresa).
+double? grahamFairPrice(double? eps, double? bookValuePerShare) =>
+    eps == null ||
+            bookValuePerShare == null ||
+            eps <= 0 ||
+            bookValuePerShare <= 0
+        ? null
+        : math.sqrt(Assumptions.grahamMultiplier * eps * bookValuePerShare);
 
 enum AssetClass {
   fixedIncome,
@@ -149,6 +170,7 @@ class StockIdea {
   final double beta;
   final double requiredReturn;
   final double? gordonFairPrice;
+  final double? grahamFairPrice;
   final double score;
 
   const StockIdea({
@@ -156,11 +178,25 @@ class StockIdea {
     required this.beta,
     required this.requiredReturn,
     required this.gordonFairPrice,
+    this.grahamFairPrice,
     required this.score,
   });
 
-  double? get upside =>
+  double? get gordonUpside =>
       gordonFairPrice == null ? null : gordonFairPrice! / quote.price - 1;
+
+  double? get grahamUpside =>
+      grahamFairPrice == null ? null : grahamFairPrice! / quote.price - 1;
+
+  /// Média dos métodos disponíveis (Gordon e Graham). Nulo se nenhum se
+  /// aplica (sem proventos e sem lucro).
+  double? get upside {
+    final ups = [gordonUpside, grahamUpside].whereType<double>().toList();
+    return ups.isEmpty ? null : ups.reduce((a, b) => a + b) / ups.length;
+  }
+
+  /// Empresa com prejuízo nos últimos 12 meses.
+  bool get hasLoss => (quote.netIncome ?? 0) < 0;
 }
 
 class PortfolioPlan {
@@ -410,9 +446,9 @@ class PortfolioEngine {
     );
   }
 
-  /// Ranking educativo de ações: Gordon (preço justo com o retorno exigido
-  /// pelo CAPM) + fatores de Fama-French (valor pelo dividend yield e
-  /// tamanho pelo valor de mercado).
+  /// Ranking educativo de ações: preço justo (média de Gordon, com o
+  /// retorno exigido pelo CAPM, e de Graham) + fatores de Fama-French (valor
+  /// pelo dividend yield e tamanho pelo valor de mercado).
   static List<StockIdea> rankStocks(
       List<StockQuote> stocks, PriceSeries market, MacroSnapshot macro) {
     if (stocks.isEmpty) return const [];
@@ -437,9 +473,23 @@ class PortfolioEngine {
       return [for (final x in xs) sd == 0 ? 0 : ((x - m) / sd).clamp(-2, 2)];
     }
 
-    final upsides = [
-      for (final r in raw) r.$4 == null ? -0.5 : r.$4! / r.$1.price - 1,
+    final graham = [
+      for (final r in raw)
+        grahamFairPrice(r.$1.earningsPerShare, r.$1.bookValuePerShare),
     ];
+    // Sem nenhum preço justo (sem proventos e sem lucro): conta como cara.
+    // Diferenças enormes (Graham em bancos dá +200%) são limitadas para não
+    // dominarem o ranking.
+    final upsides = <double>[];
+    for (var i = 0; i < raw.length; i++) {
+      final ups = [
+        if (raw[i].$4 != null) raw[i].$4! / raw[i].$1.price - 1,
+        if (graham[i] != null) graham[i]! / raw[i].$1.price - 1,
+      ];
+      upsides.add(ups.isEmpty
+          ? -0.5
+          : (ups.reduce((a, b) => a + b) / ups.length).clamp(-0.8, 1.0));
+    }
     final values = [for (final r in raw) r.$1.dividendYield];
     final caps = [for (final r in raw) r.$1.marketCap].whereType<double>();
     final medianCap =
@@ -456,6 +506,7 @@ class PortfolioEngine {
           beta: raw[i].$2,
           requiredReturn: raw[i].$3,
           gordonFairPrice: raw[i].$4,
+          grahamFairPrice: graham[i],
           score: 0.5 * zu[i] + 0.25 * zv[i] + 0.25 * zs[i],
         ),
     ]..sort((a, b) => b.score.compareTo(a.score));

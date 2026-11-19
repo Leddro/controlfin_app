@@ -48,6 +48,12 @@ double beta(List<double> asset, List<double> market) {
   return v == 0 ? 1 : covariance(asset, market) / v;
 }
 
+/// Correlação de Pearson (−1 a 1); 0 se uma das séries não varia.
+double correlation(List<double> a, List<double> b) {
+  final d = math.sqrt(covariance(a, a) * covariance(b, b));
+  return d == 0 ? 0 : (covariance(a, b) / d).clamp(-1.0, 1.0);
+}
+
 /// Matriz de covariância anualizada (×12) com encolhimento para a diagonal
 /// ([shrink] entre 0 e 1), que deixa a otimização menos sensível a ruído.
 List<List<double>> annualCovariance(List<List<double>> returns,
