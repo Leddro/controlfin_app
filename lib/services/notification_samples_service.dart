@@ -1,16 +1,27 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/bank_notification.dart';
 import 'bank_notification_service.dart';
 
-/// Conta que vê a área de desenvolvedor. A proteção de verdade está nas
-/// regras do Firestore (por UID); isto só decide o que aparece na tela.
-const developerEmails = {'dev@exemplo.com'};
+/// Contas que veem a área de desenvolvedor, pelo SHA-256 do e-mail em
+/// minúsculas (o código é público e o e-mail não precisa ficar exposto).
+/// A proteção de verdade está nas regras do Firestore (por UID); isto só
+/// decide o que aparece na tela.
+const developerEmailHashes = {
+  'fa5073d33bb3340f3536a76f14ca92c7fc3e76c8a910b6c97e0253149dc038b6',
+};
+
+/// SHA-256 do e-mail normalizado, no formato de [developerEmailHashes].
+String emailHash(String email) =>
+    sha256.convert(utf8.encode(email.trim().toLowerCase())).toString();
 
 bool isDeveloper(User? user) =>
     user?.email != null &&
-    developerEmails.contains(user!.email!.trim().toLowerCase());
+    developerEmailHashes.contains(emailHash(user!.email!));
 
 /// Texto de notificação enviado para a revisão, já com os dados trocados.
 class NotificationSample {

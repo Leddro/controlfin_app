@@ -19,6 +19,13 @@ match /community_reports/{id} {
     && request.resource.data.uid == request.auth.uid
     && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'kind',
          'text', 'platform', 'appVersion', 'createdAt', 'status'])
+    && request.resource.data.email == request.auth.token.email
+    && request.resource.data.name is string
+    && request.resource.data.name.size() <= 100
+    && request.resource.data.platform is string
+    && request.resource.data.platform.size() <= 20
+    && request.resource.data.appVersion is string
+    && request.resource.data.appVersion.size() <= 20
     && request.resource.data.kind in ['bug', 'idea']
     && request.resource.data.status == 'new'
     && request.resource.data.text is string

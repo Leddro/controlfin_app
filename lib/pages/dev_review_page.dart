@@ -23,11 +23,25 @@ match /notification_samples/{id} {
   allow create: if request.auth != null
     && request.resource.data.keys().hasOnly(
          ['package', 'bank', 'title', 'text', 'deviceKind', 'count', 'lastSeen'])
+    && request.resource.data.package is string
+    && request.resource.data.package.size() < 200
+    && request.resource.data.bank is string
+    && request.resource.data.bank.size() < 100
+    && request.resource.data.deviceKind is string
+    && request.resource.data.deviceKind.size() < 50
+    && request.resource.data.title is string
     && request.resource.data.title.size() < 300
-    && request.resource.data.text.size() < 1000;
+    && request.resource.data.text is string
+    && request.resource.data.text.size() < 1000
+    && request.resource.data.count == 1
+    && request.resource.data.lastSeen == request.time;
   allow update: if isDev() || (request.auth != null
     && request.resource.data.diff(resource.data).affectedKeys()
-         .hasOnly(['count', 'lastSeen', 'deviceKind']));
+         .hasOnly(['count', 'lastSeen', 'deviceKind'])
+    && request.resource.data.count == resource.data.count + 1
+    && request.resource.data.lastSeen == request.time
+    && request.resource.data.deviceKind is string
+    && request.resource.data.deviceKind.size() < 50);
 }''';
 
 /// Área do desenvolvedor: textos de notificação enviados pelos celulares

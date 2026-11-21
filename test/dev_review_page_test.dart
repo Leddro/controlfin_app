@@ -69,9 +69,16 @@ void main() {
     final rules = samplesRules('abc123');
     expect(rules, contains("request.auth.uid == 'abc123'"));
     expect(rules, contains('allow read, delete: if isDev();'));
+    // Quem não é o dev só soma 1 na contagem.
+    expect(rules,
+        contains('request.resource.data.count == resource.data.count + 1'));
   });
 
   test('só a conta do desenvolvedor vê a área', () {
-    expect(developerEmails, {'dev@exemplo.com'});
+    expect(developerEmailHashes, hasLength(1));
+    // O e-mail é comparado sem espaços e sem diferença de maiúsculas.
+    expect(emailHash(' Dev@Exemplo.com '), emailHash('dev@exemplo.com'));
+    expect(developerEmailHashes.contains(emailHash('outra@exemplo.com')),
+        isFalse);
   });
 }

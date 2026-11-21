@@ -70,6 +70,9 @@ void main() {
       final rules = reportsRules('DEV');
       expect(rules, contains("request.auth.uid == 'DEV'"));
       expect(rules, contains('request.resource.data.uid == request.auth.uid'));
+      // Ninguém manda report em nome de outro e-mail.
+      expect(rules,
+          contains('request.resource.data.email == request.auth.token.email'));
       expect(rules, contains('resource.data.uid == request.auth.uid'));
       expect(rules, contains('allow update, delete: if isDev();'));
       expect(rules, contains('<= $reportMaxLength'));

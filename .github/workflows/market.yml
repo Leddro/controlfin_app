@@ -20,6 +20,10 @@ on:
         options: [completa, rapida]
         default: completa
 
+# O robô só lê o repositório; quem grava é a conta de serviço do Firebase.
+permissions:
+  contents: read
+
 concurrency:
   group: market
   cancel-in-progress: false
