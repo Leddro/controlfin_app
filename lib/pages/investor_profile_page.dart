@@ -9,8 +9,13 @@ import '../widgets/app_header.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
 
+/// Perfil de investidor completo, aberto pela faixa da aba Investimentos.
 class InvestorProfilePage extends StatefulWidget {
-  const InvestorProfilePage({super.key});
+  /// Abre direto nas perguntas e volta para a tela anterior ao salvar ou
+  /// cancelar (usado quando ainda não há perfil).
+  final bool startQuiz;
+
+  const InvestorProfilePage({super.key, this.startQuiz = false});
 
   @override
   State<InvestorProfilePage> createState() => _InvestorProfilePageState();
@@ -19,7 +24,7 @@ class InvestorProfilePage extends StatefulWidget {
 class _InvestorProfilePageState extends State<InvestorProfilePage> {
   final _service = InvestorProfileService();
   late final _stream = _service.watch();
-  bool _quizOpen = false;
+  late bool _quizOpen = widget.startQuiz;
   bool _saving = false;
   String? _error;
 
@@ -31,6 +36,10 @@ class _InvestorProfilePageState extends State<InvestorProfilePage> {
     try {
       await _service.save(profile);
       if (!mounted) return;
+      if (widget.startQuiz) {
+        Navigator.of(context).pop();
+        return;
+      }
       setState(() => _quizOpen = false);
     } catch (_) {
       if (!mounted) return;
@@ -62,7 +71,9 @@ class _InvestorProfilePageState extends State<InvestorProfilePage> {
           } else if (_quizOpen) {
             child = InvestorQuiz(
               onDone: _save,
-              onCancel: () => setState(() => _quizOpen = false),
+              onCancel: () => widget.startQuiz
+                  ? Navigator.of(context).pop()
+                  : setState(() => _quizOpen = false),
             );
           } else if (profile == null) {
             child = _Intro(

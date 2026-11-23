@@ -2,11 +2,12 @@ import 'package:material_ui/material_ui.dart';
 
 import '../widgets/app_header.dart';
 import 'account_page.dart';
+import 'goals_page.dart';
 import 'home_page.dart';
 import 'investments_page.dart';
-import 'investor_profile_page.dart';
 
-/// Estrutura principal: Início, Investimentos, Perfil de investidor e Conta.
+/// Estrutura principal: Início, Investimentos (com o perfil de investidor),
+/// Metas e Conta.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -24,8 +25,8 @@ class _MainShellState extends State<MainShell> {
   /// Criadas uma vez só: trocar de aba não reconstrói as telas.
   late final List<Widget> _pages = [
     const HomePage(),
-    InvestmentsPage(onOpenProfile: () => _go(ShellNavigation.profile)),
-    const InvestorProfilePage(),
+    const InvestmentsPage(),
+    const GoalsPage(),
     const AccountPage(),
   ];
 
@@ -66,9 +67,9 @@ class _MainShellState extends State<MainShell> {
               label: 'Investimentos',
             ),
             NavigationDestination(
-              icon: Icon(Icons.insights_outlined),
-              selectedIcon: Icon(Icons.insights_rounded),
-              label: 'Perfil',
+              icon: Icon(Icons.flag_outlined),
+              selectedIcon: Icon(Icons.flag_rounded),
+              label: 'Metas',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline_rounded),

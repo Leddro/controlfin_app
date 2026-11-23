@@ -153,7 +153,12 @@ const needsCategoryNames = {
 /// Converte "1.500,50" ou "1500.50" em double.
 double? parseMoney(String text) {
   var t = text.trim().replaceAll(r'R$', '').replaceAll(' ', '');
-  if (t.contains(',')) t = t.replaceAll('.', '').replaceAll(',', '.');
+  if (t.contains(',')) {
+    t = t.replaceAll('.', '').replaceAll(',', '.');
+  } else if (RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(t)) {
+    // "10.000" sem vírgula é dez mil (ponto de milhar), não dez.
+    t = t.replaceAll('.', '');
+  }
   return double.tryParse(t);
 }
 

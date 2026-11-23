@@ -107,13 +107,13 @@ class GoalsCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(
-            child: Text('Suas metas do mês',
+            child: Text('Orçamento do mês',
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w700)),
           ),
           InfoButton(
             key: const Key('info-goals'),
-            title: 'Suas metas do mês',
+            title: 'Orçamento do mês',
             text: '${onSelectGoal != null ? 'Toque numa meta para ver os '
                     'gastos dela.\n\n' : ''}'
                 'Cada meta é uma parte da sua renda. Em Ajustar você muda as '
@@ -483,7 +483,7 @@ class _GoalsDialogState extends State<_GoalsDialog> {
   Widget build(BuildContext context) {
     final small = Theme.of(context).textTheme.bodySmall;
     return AlertDialog(
-      title: const Text('Renda e metas'),
+      title: const Text('Renda e orçamento'),
       content: SingleChildScrollView(
         child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -254,7 +254,7 @@ class FocusCard extends StatelessWidget {
     if (plan.focus == SalaryFocus.defineIncome) {
       return const _Panel(
         title: 'Foco agora: definir sua renda',
-        child: Text('Informe sua renda média em Início › Suas metas do mês › '
+        child: Text('Informe sua renda média em Início › Orçamento do mês › '
             'Ajustar. Com ela, o app mostra quanto do salário vai para cada '
             'lugar.'),
       );

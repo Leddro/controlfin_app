@@ -5,7 +5,7 @@ import 'user_avatar.dart';
 
 /// Troca de aba para qualquer tela dentro do MainShell.
 class ShellNavigation extends InheritedWidget {
-  static const home = 0, investments = 1, profile = 2, account = 3;
+  static const home = 0, investments = 1, goals = 2, account = 3;
 
   final ValueChanged<int> go;
 
