@@ -181,8 +181,13 @@ void main() {
     await tester.tap(find.text('Desejos (30%)'));
     await tester.tap(find.text('Guardar (20%)'));
     expect(tapped, ['Essenciais', 'Desejos']);
-    expect(
-        find.text('Toque numa meta para ver os gastos dela.'), findsOneWidget);
+    // A explicação fica escondida no "i".
+    expect(find.textContaining('Toque numa meta'), findsNothing);
+    await tester.tap(find.byKey(const Key('info-goals')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Toque numa meta para ver os gastos dela.'),
+        findsOneWidget);
+    expect(find.textContaining('50/30/20'), findsOneWidget);
   });
 
   test('cada gasto conta na meta certa', () {

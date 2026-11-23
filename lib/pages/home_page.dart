@@ -14,6 +14,7 @@ import '../services/pdf_import_service.dart';
 import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../models/market/contribution.dart';
+import '../widgets/info_button.dart';
 import '../widgets/bank_inbox_banner.dart';
 import '../widgets/card_editor_sheet.dart';
 import '../widgets/card_widgets.dart';
@@ -761,13 +762,13 @@ class _HomePageState extends State<HomePage> {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w700)),
           ),
+          InfoButton(
+            title: 'Compras no crédito para os próximos meses',
+            text: 'Feitas em ${monthName(_month).toLowerCase()}, pagas a '
+                'partir de ${monthName(next).toLowerCase()}. Não entram nas '
+                'saídas deste mês.',
+          ),
         ]),
-        const SizedBox(height: 4),
-        Text(
-          'Feitas em ${monthName(_month).toLowerCase()}, pagas a partir de '
-          '${monthName(next).toLowerCase()}. Não entram nas saídas deste mês.',
-          style: theme.textTheme.bodySmall,
-        ),
         const SizedBox(height: 4),
         for (final t in shown) _txTile(t, settings, deferred: true),
       ],

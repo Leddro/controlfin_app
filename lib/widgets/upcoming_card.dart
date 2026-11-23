@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/credit_card.dart';
 import '../services/tx_service.dart';
 import 'card_widgets.dart';
+import 'info_button.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -85,13 +86,17 @@ class UpcomingCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Já comprometido em ${monthName(next)}',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Gastos no crédito que você vai pagar no mês que vem.',
-                    style: theme.textTheme.bodySmall,
+                  InfoTitle(
+                    'Já comprometido em ${monthName(next)}',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                    info: const InfoButton(
+                      title: 'Já comprometido',
+                      text: 'Gastos no crédito que você vai pagar no mês que '
+                          'vem: compras deste mês que caem na próxima fatura, '
+                          'parcelas de compras antigas e compras parceladas '
+                          'que continuam depois.',
+                    ),
                   ),
                 ],
               ),

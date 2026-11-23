@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/investor_profile.dart';
 import '../services/investor_profile_service.dart';
+import '../widgets/info_button.dart';
 import '../widgets/investor_quiz.dart';
 import '../widgets/app_header.dart';
 
@@ -114,11 +115,8 @@ class _Intro extends StatelessWidget {
                   style: theme.textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
-              const Text(
-                'Antes das dicas, precisamos entender seu objetivo e o quanto '
-                'você está disposto e preparado para correr riscos. São 11 '
-                'perguntas rápidas, e você pode refazer quando quiser.',
-              ),
+              const Text('São 11 perguntas rápidas. Dá para refazer quando '
+                  'quiser.'),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: onStart,
@@ -206,33 +204,45 @@ class InvestorProfileView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Como chegamos nesse perfil',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              InfoTitle(
+                'Como chegamos nesse perfil',
+                info: InfoButton(
+                  key: const Key('info-profile'),
+                  title: 'Como chegamos nesse perfil',
+                  text: 'Disposição para risco: o quanto você aceita '
+                      'oscilações (apostas, queda e faixas de resultado).\n\n'
+                      'Capacidade de correr risco: o quanto sua situação '
+                      'aguenta oscilações (prazo, idade, renda, reserva e '
+                      'experiência).\n\n'
+                      'O perfil segue a menor das duas notas. Ele fica '
+                      'conservador se o objetivo for a reserva ou o prazo '
+                      'for menor que 1 ano.\n\n'
+                      'Aversão ao risco (Arrow-Pratt): estimada pelas '
+                      'perguntas de troca de emprego. Quanto maior o γ, mais '
+                      'retorno você exige para aceitar incerteza. Com γ = 1 a '
+                      'pessoa segue a utilidade logarítmica de Bernoulli.',
+                  sections: [
+                    for (final (author, idea) in investorReferences)
+                      InfoSection(author, idea),
+                  ],
+                  footer: 'Este perfil é educativo e não é recomendação de '
+                      'investimento. Bancos e corretoras fazem a própria '
+                      'análise de perfil (suitability) antes de oferecer '
+                      'produtos.',
+                ),
+              ),
               const SizedBox(height: 16),
               _Meter(
                 label: 'Disposição para risco',
-                hint: 'O quanto você aceita oscilações (apostas, queda e '
-                    'faixas de resultado).',
                 value: profile.willingness,
               ),
               _Meter(
                 label: 'Capacidade de correr risco',
-                hint: 'O quanto sua situação aguenta oscilações (prazo, '
-                    'idade, renda, reserva e experiência).',
                 value: profile.capacity,
               ),
               Text(
-                'Aversão ao risco (Arrow-Pratt): ${aversion.label}, '
-                '${aversion.range}.',
+                'Aversão ao risco: ${aversion.label}, ${aversion.range}.',
                 style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Estimada pelas perguntas de troca de emprego. Quanto maior '
-                'o γ, mais retorno você exige para aceitar incerteza. Com '
-                'γ = 1 a pessoa segue a utilidade logarítmica de Bernoulli.',
-                style: theme.textTheme.bodySmall,
               ),
               const Divider(height: 32),
               const Text('O que definiu seu perfil',
@@ -241,46 +251,6 @@ class InvestorProfileView extends StatelessWidget {
               Text(profile.limitingFactor),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        Material(
-          color: _cardColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              title: const Text('Base teórica',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              expandedCrossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final (author, idea) in investorReferences)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(author,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(idea, style: theme.textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Este perfil é educativo e não é recomendação de investimento. '
-          'Bancos e corretoras fazem a própria análise de perfil '
-          '(suitability) antes de oferecer produtos.',
-          style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
         Row(children: [
@@ -303,14 +273,12 @@ class InvestorProfileView extends StatelessWidget {
 
 class _Meter extends StatelessWidget {
   final String label;
-  final String hint;
   final double value;
 
-  const _Meter({required this.label, required this.hint, required this.value});
+  const _Meter({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final color = value >= 70
         ? investorColor(InvestorType.aggressive)
         : value >= 40
@@ -328,7 +296,6 @@ class _Meter extends StatelessWidget {
             ),
             Text('${value.round()} de 100'),
           ]),
-          Text(hint, style: theme.textTheme.bodySmall),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),

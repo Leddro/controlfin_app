@@ -84,7 +84,6 @@ void main() {
       'Fronteira eficiente',
       'Bitcoin: rede e escassez',
       'Ações para a sua carteira',
-      'Como a carteira foi calculada',
     ]) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
@@ -95,8 +94,12 @@ void main() {
     expect(find.textContaining('Ranking completo (6 ações)'), findsOneWidget);
     expect(find.textContaining('Cota diária'), findsOneWidget);
 
-    await tester.tap(find.text('Como a carteira foi calculada'));
+    // As explicações ficam escondidas até tocar no "i".
+    expect(find.text('Harry Markowitz (1952)'), findsNothing);
+    expect(find.textContaining('Graham ='), findsNothing);
+    await tester.tap(find.byKey(const Key('info-portfolio')));
     await tester.pumpAndSettle();
+    expect(find.text('Como a carteira foi calculada'), findsOneWidget);
     expect(find.text('Harry Markowitz (1952)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

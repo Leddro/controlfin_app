@@ -14,6 +14,7 @@ import '../services/settings_service.dart';
 import '../services/tx_service.dart';
 import '../widgets/app_header.dart';
 import '../widgets/card_widgets.dart';
+import '../widgets/info_button.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 final _when = DateFormat("dd/MM 'às' HH:mm", 'pt_BR');
@@ -191,8 +192,25 @@ class _BankNotificationsPageState extends State<BankNotificationsPage>
     }
     final pending = _pending;
     return Scaffold(
-      appBar:
-          AppHeader(title: 'Notificações dos bancos', avatar: widget.avatar),
+      appBar: AppHeader(
+        title: 'Notificações dos bancos',
+        avatar: widget.avatar,
+        actions: const [
+          InfoButton(
+            key: Key('info-bank-notifications'),
+            title: 'Notificações dos bancos',
+            text: 'O app lê as notificações de compra e de Pix dos seus '
+                'bancos e monta o lançamento. Você confere os dados e '
+                'confirma; nada é salvo sem a sua confirmação.\n\n'
+                'O texto das notificações fica só no celular. Para a sua '
+                'conta vai apenas o lançamento confirmado.\n\n'
+                'Aviso para confirmar: o app avisa quando chega algo novo.\n\n'
+                'Bateria sem restrição: sem isso, o celular pode desligar a '
+                'leitura depois de um tempo.',
+          ),
+          SizedBox(width: 4),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : StreamBuilder<List<CreditCard>>(
@@ -337,7 +355,8 @@ class _AccessPanel extends StatelessWidget {
                 children: [
                   Text(title,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Text(help, style: theme.textTheme.bodySmall),
+                  // Com tudo certo, só o título; a explicação fica no "i".
+                  if (!ok) Text(help, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),

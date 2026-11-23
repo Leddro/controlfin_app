@@ -5,6 +5,7 @@ import '../models/market/contribution.dart';
 import '../models/tx.dart';
 import '../models/user_settings.dart';
 import 'expense_type_dialog.dart';
+import 'info_button.dart';
 
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
@@ -110,6 +111,26 @@ class GoalsCard extends StatelessWidget {
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w700)),
           ),
+          InfoButton(
+            key: const Key('info-goals'),
+            title: 'Suas metas do mês',
+            text: '${onSelectGoal != null ? 'Toque numa meta para ver os '
+                    'gastos dela.\n\n' : ''}'
+                'Cada meta é uma parte da sua renda. Em Ajustar você muda as '
+                'porcentagens e escolhe em qual meta cada tipo de gasto '
+                'conta.\n\n'
+                'Reserva de emergência: ${settings.emergencyMonths} meses de '
+                '${_money.format(status.monthlyBase)} de gastos essenciais '
+                '(pela ${status.baseSource}).',
+            sections: [
+              for (final budget in budgets)
+                InfoSection(budget.name, _budgetHint(budget, settings)),
+            ],
+            footer: 'Referência: regra 50/30/20 (Elizabeth Warren e Amelia '
+                'Warren Tyagi) e a orientação comum de 3 a 6 meses de gastos '
+                'essenciais na reserva. É um guia geral, não aconselhamento '
+                'financeiro.',
+          ),
           TextButton.icon(
             onPressed: onEdit,
             icon: const Icon(Icons.tune_rounded, size: 18),
@@ -118,14 +139,10 @@ class GoalsCard extends StatelessWidget {
         ]),
         Text('Renda média: ${_money.format(income)}',
             style: theme.textTheme.bodyMedium),
-        if (onSelectGoal != null)
-          Text('Toque numa meta para ver os gastos dela.',
-              style: theme.textTheme.bodySmall),
         const SizedBox(height: 12),
         for (final budget in budgets)
           _GoalRow(
             label: '${budget.name} (${_percentLabel(budget.percent)}%)',
-            hint: _budgetHint(budget, settings),
             value: budget.kind == BudgetKind.save
                 ? left
                 : byGoal[budget.name] ?? 0,
@@ -141,9 +158,8 @@ class GoalsCard extends StatelessWidget {
             style: theme.textTheme.titleSmall
                 ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text(
-            'Meta: ${_money.format(target)} (${settings.emergencyMonths} meses '
-            'de ${_money.format(status.monthlyBase)}, pela ${status.baseSource})'),
+        Text('Meta: ${_money.format(target)} '
+            '(${settings.emergencyMonths} meses de gastos essenciais)'),
         const SizedBox(height: 10),
         ClipRRect(
           borderRadius: BorderRadius.circular(4),
@@ -161,13 +177,6 @@ class GoalsCard extends StatelessWidget {
               : 'Guardado: ${_money.format(reserve)}. Guardando ${_percentLabel(saveShare * 100)}% da renda, '
                   'faltam cerca de $monthsLeft ${monthsLeft == 1 ? 'mês' : 'meses'}.',
           style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Referência: regra 50/30/20 (Elizabeth Warren e Amelia Warren Tyagi) e a orientação '
-          'comum de 3 a 6 meses de gastos essenciais na reserva. É um guia geral, não '
-          'aconselhamento financeiro.',
-          style: theme.textTheme.bodySmall,
         ),
       ]),
     );
@@ -200,7 +209,6 @@ String _percentLabel(double percent) {
 
 class _GoalRow extends StatelessWidget {
   final String label;
-  final String hint;
   final double value;
   final double goal;
   final bool saving;
@@ -209,7 +217,6 @@ class _GoalRow extends StatelessWidget {
 
   const _GoalRow({
     required this.label,
-    required this.hint,
     required this.value,
     required this.goal,
     this.saving = false,
@@ -253,7 +260,6 @@ class _GoalRow extends StatelessWidget {
           Icon(Icons.chevron_right_rounded,
               size: 20, color: theme.colorScheme.outline),
       ]),
-      Text(hint, style: theme.textTheme.bodySmall),
       const SizedBox(height: 6),
       ClipRRect(
         borderRadius: BorderRadius.circular(4),

@@ -14,6 +14,7 @@ import '../../models/market/stock_advice.dart';
 import '../../services/holdings_service.dart';
 import '../../services/market/market_repository.dart';
 import '../../services/market/market_sources.dart';
+import '../info_button.dart';
 import 'contribution_section.dart';
 
 const _cardColor = Color(0xFF1A1A1A);
@@ -173,7 +174,7 @@ class _MarketSectionState extends State<MarketSection> {
                 child: Text(_whyNoPlan(snap.error, data)),
               )
             else ...[
-              _PortfolioCard(plan: plan),
+              _PortfolioCard(plan: plan, macro: data.macro!),
               const SizedBox(height: 16),
               _FrontierCard(plan: plan),
               if (data.bitcoin != null) ...[
@@ -193,8 +194,6 @@ class _MarketSectionState extends State<MarketSection> {
                         ? null
                         : (t, usd) => fetchStockQuote(t, usdBrl: usd)),
               ),
-              const SizedBox(height: 16),
-              _MethodCard(plan: plan, macro: data.macro!),
             ],
             if (data.warnings.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -228,9 +227,11 @@ class _MarketSectionState extends State<MarketSection> {
 class _Card extends StatelessWidget {
   final String title;
   final String? subtitle;
+  final InfoButton? info;
   final Widget child;
 
-  const _Card({required this.title, this.subtitle, required this.child});
+  const _Card(
+      {required this.title, this.subtitle, this.info, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -248,9 +249,7 @@ class _Card extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700)),
+            InfoTitle(title, info: info),
             if (subtitle != null) ...[
               const SizedBox(height: 2),
               Text(subtitle!, style: theme.textTheme.bodySmall),
@@ -311,6 +310,18 @@ class _MarketToday extends StatelessWidget {
       title: 'Mercado hoje',
       subtitle: 'Atualizado em '
           '${DateFormat("dd/MM 'às' HH:mm").format(macro.fetchedAt)}',
+      info: const InfoButton(
+        title: 'Mercado hoje',
+        text: 'Os principais números do mercado, usados para calcular a '
+            'sua carteira. Os dados são atualizados 4 vezes durante o pregão '
+            'e uma vez depois do fechamento.\n\n'
+            'Selic: juros básicos do Brasil, a referência da renda fixa. '
+            'IPCA: inflação dos últimos 12 meses; o Focus é o que o mercado '
+            'espera para os próximos anos.',
+        footer: 'Fontes: Banco Central (Selic, IPCA, Focus), brapi '
+            '(Ibovespa), Alpha Vantage (dólar e juros dos EUA) e CoinMetrics '
+            '(Bitcoin).',
+      ),
       child: LayoutBuilder(builder: (context, c) {
         final width = (c.maxWidth - 12) / 2;
         return Wrap(spacing: 12, runSpacing: 12, children: [
@@ -339,8 +350,9 @@ class _MarketToday extends StatelessWidget {
 
 class _PortfolioCard extends StatelessWidget {
   final PortfolioPlan plan;
+  final MacroSnapshot macro;
 
-  const _PortfolioCard({required this.plan});
+  const _PortfolioCard({required this.plan, required this.macro});
 
   @override
   Widget build(BuildContext context) {
@@ -349,9 +361,17 @@ class _PortfolioCard extends StatelessWidget {
       ..sort((a, b) => b.value.compareTo(a.value));
     return _Card(
       title: 'Carteira-alvo do seu perfil',
-      subtitle: 'Markowitz com a sua aversão ao risco (γ = '
-          '${plan.gamma.toString().replaceAll('.', ',')}) e os limites do '
-          'seu perfil.',
+      info: InfoButton(
+        key: const Key('info-portfolio'),
+        title: 'Como a carteira foi calculada',
+        text: 'Pelo método de Markowitz, com a sua aversão ao risco (γ = '
+            '${plan.gamma.toString().replaceAll('.', ',')}) e os limites do '
+            'seu perfil.\n\n'
+            'Estimativas, não promessas: o retorno real pode ser bem '
+            'diferente, principalmente em prazos curtos.',
+        sections: _methodSections(plan, macro),
+        footer: _sources,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -417,12 +437,6 @@ class _PortfolioCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(note),
           ],
-          const SizedBox(height: 8),
-          Text(
-            'Estimativas, não promessas: o retorno real pode ser bem diferente, '
-            'principalmente em prazos curtos.',
-            style: theme.textTheme.bodySmall,
-          ),
         ],
       ),
     );
@@ -459,8 +473,14 @@ class _FrontierCard extends StatelessWidget {
 
     return _Card(
       title: 'Fronteira eficiente',
-      subtitle: 'Cada ponto da linha é a carteira de maior retorno esperado '
-          'para aquele risco. O ponto branco é a sua.',
+      info: const InfoButton(
+        title: 'Fronteira eficiente',
+        text: 'Cada ponto da linha amarela é a carteira de maior retorno '
+            'esperado para aquele risco. O ponto branco é a sua carteira-alvo, '
+            'e os pontos coloridos são as classes de investimento sozinhas.\n\n'
+            'Quanto mais à direita, mais a carteira oscila; quanto mais alto, '
+            'mais ela deve render.',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -572,7 +592,7 @@ class _BitcoinCard extends StatelessWidget {
     final theme = Theme.of(context);
     final signal =
         plan.bitcoinSignal ?? bitcoinSignalFor(bitcoin.metcalfeRatio);
-    final (label, color, text) = switch (signal) {
+    final (label, color, signalText) = switch (signal) {
       BitcoinSignal.cheap => (
           'Barato frente à rede',
           const Color(0xFF4ADE80),
@@ -596,8 +616,20 @@ class _BitcoinCard extends StatelessWidget {
     String price(double usd) =>
         usdBrl != null ? _brl0.format(usd * usdBrl!) : _usd0.format(usd);
 
+    final small = theme.textTheme.bodySmall;
     return _Card(
       title: 'Bitcoin: rede e escassez',
+      info: InfoButton(
+        title: 'Bitcoin: rede e escassez',
+        text: 'Metcalfe / Burniske: o valor de uma rede cresce com o '
+            'quadrado dos usuários. O app compara o valor de mercado do '
+            'Bitcoin com o tamanho da rede (endereços ativos por dia). Razão '
+            '1 = média histórica. $signalText\n\n'
+            'O peso do Bitcoin na sua carteira é ajustado por esse sinal.\n\n'
+            'Stock-to-flow (PlanB, inspirado em Ammous): estoque ÷ emissão '
+            'anual, uma medida de escassez. Só informativo: o modelo errou '
+            'por larga margem desde 2021 e não altera a carteira.',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -614,29 +646,24 @@ class _BitcoinCard extends StatelessWidget {
                 style: TextStyle(color: color, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(height: 8),
-          Text('Metcalfe / Burniske: $text Razão atual: '
-              '${bitcoin.metcalfeRatio.toStringAsFixed(2).replaceAll('.', ',')} '
-              '(1 = média histórica), com ${_int.format(bitcoin.activeAddresses.round())} '
-              'endereços ativos por dia.'),
+          Text(
+            'Razão de Metcalfe: '
+            '${bitcoin.metcalfeRatio.toStringAsFixed(2).replaceAll('.', ',')} • '
+            '${_int.format(bitcoin.activeAddresses.round())} endereços ativos '
+            'por dia',
+            style: small,
+          ),
+          Text(
+            'Stock-to-flow: ${bitcoin.stockToFlow.toStringAsFixed(0)} • '
+            'modelo: ${price(bitcoin.s2fModelPriceUsd)}',
+            style: small,
+          ),
           const SizedBox(height: 8),
           Text(
             weight == null
                 ? 'Seu perfil não inclui Bitcoin na carteira.'
-                : 'Na sua carteira: ${_pct(weight, digits: 0)}, ajustado por '
-                    'esse sinal.',
+                : 'Na sua carteira: ${_pct(weight, digits: 0)}',
             style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const Divider(height: 24),
-          Text(
-            'Stock-to-flow (PlanB, inspirado em Ammous): estoque ÷ emissão '
-            'anual = ${bitcoin.stockToFlow.toStringAsFixed(0)}. O modelo '
-            'aponta ${price(bitcoin.s2fModelPriceUsd)} por bitcoin.',
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Só informativo: o modelo errou por larga margem desde 2021 e não '
-            'altera a carteira.',
-            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -764,13 +791,31 @@ class _StocksCardState extends State<_StocksCard> {
       padding: const EdgeInsets.only(top: 16),
       child: _Card(
         title: 'Ações para a sua carteira',
-        subtitle: 'Preço justo por Graham (lucro e patrimônio) e por Gordon '
-            '(proventos), olhando as ações que você já tem.',
+        info: InfoButton(
+          key: const Key('info-stocks'),
+          title: 'Ações para a sua carteira',
+          text: '${advice.summary}\n\n'
+              'O preço justo de cada empresa é a média de dois métodos: '
+              'Graham (lucro e patrimônio) e Gordon (proventos). A '
+              'porcentagem ao lado de cada ação compara o preço de hoje com '
+              'esse valor.',
+          sections: const [
+            InfoSection(
+                'Graham',
+                '√(22,5 × lucro por ação × patrimônio por ação): no máximo '
+                    'P/L 15 e P/VP 1,5. Ele pedia 25% de desconto como margem '
+                    'de segurança. Ignora os juros.'),
+            InfoSection(
+                'Gordon',
+                'Proventos de 12 meses × (1 + g) ÷ (k − g), com g = IPCA de '
+                    'longo prazo e k pelo CAPM. Pesa os juros altos.'),
+          ],
+          footer: 'Dados do Yahoo Finance e da brapi. Não é recomendação de '
+              'compra.',
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(advice.summary, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 12),
             if (advice.held.isNotEmpty) ...[
               header('Suas ações'),
               for (final r in advice.held) _HeldRow(review: r),
@@ -785,8 +830,7 @@ class _StocksCardState extends State<_StocksCard> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     'Nenhuma empresa do ranking está perto do preço justo '
-                    'agora. Para a parte de ações, os ETFs da carteira-alvo '
-                    'continuam sendo o caminho.',
+                    'agora. Fique com os ETFs da carteira-alvo.',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
@@ -808,16 +852,6 @@ class _StocksCardState extends State<_StocksCard> {
                   ],
                 ),
               ),
-            const SizedBox(height: 8),
-            Text(
-              'Graham = √(22,5 × lucro por ação × patrimônio por ação): no '
-              'máximo P/L 15 e P/VP 1,5; ele pedia 25% de desconto como '
-              'margem de segurança. Gordon = proventos de 12 meses × (1 + g) '
-              '÷ (k − g), com g = IPCA de longo prazo e k pelo CAPM. Graham '
-              'ignora os juros; Gordon pesa os juros altos. Dados do Yahoo '
-              'Finance e da brapi. Não é recomendação de compra.',
-              style: theme.textTheme.bodySmall,
-            ),
           ],
         ),
       ),
@@ -1004,124 +1038,78 @@ class _StockRow extends StatelessWidget {
 
 // ---------------------------------------------------------------- Método
 
-class _MethodCard extends StatelessWidget {
-  final PortfolioPlan plan;
-  final MacroSnapshot macro;
+const _sources = 'Fontes: Banco Central (Selic, IPCA, Focus), Alpha Vantage '
+    '(ETFs, dólar, juros dos EUA), brapi (Ibovespa, valor de mercado), Yahoo '
+    'Finance (ações, proventos, lucro e patrimônio) e CoinMetrics (rede do '
+    'Bitcoin). Conteúdo educativo, não é recomendação de investimento '
+    '(Resolução CVM 20/2021).';
 
-  const _MethodCard({required this.plan, required this.macro});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    Widget section(String title, String body) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text(body, style: theme.textTheme.bodySmall),
-            ],
-          ),
-        );
-
-    return Material(
-      color: _cardColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          title: const Text('Como a carteira foi calculada',
-              style: TextStyle(fontWeight: FontWeight.w700)),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Retorno esperado e risco de cada classe',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            for (final e in plan.estimates)
-              section(
-                '${e.assetClass.label}: ${_pct(e.expectedReturn)} ao ano, '
-                'volatilidade ${_pct(e.volatility)}',
-                [
-                  for (final v in e.views) '${v.model}: ${_pct(v.value)}',
-                  if (e.beta != null)
-                    'β contra o Ibovespa: ${e.beta!.toStringAsFixed(2).replaceAll('.', ',')}',
-                ].join(' • '),
-              ),
-            const Divider(height: 24),
-            section(
-              'Harry Markowitz (1952)',
-              'Escolhe os pesos que maximizam retorno esperado − (γ/2) × '
-                  'variância, considerando como as classes oscilam juntas '
-                  '(covariâncias de até 5 anos de preços mensais). O γ vem das '
-                  'suas respostas sobre troca de emprego (Arrow-Pratt).',
-            ),
-            section(
-              'John Burr Williams (1938) e Aswath Damodaran',
-              'O valor de um ativo é o valor presente dos fluxos futuros, '
-                  'descontados pelo retorno exigido. Retorno exigido das ações '
-                  '= Selic − spread de default do Brasil '
-                  '(${_pct(Assumptions.brazilDefaultSpread, digits: 2)}) + β × '
-                  'prêmio de risco do Brasil '
-                  '(${_pct(Assumptions.brazilTotalErp, digits: 2)}, Damodaran, '
-                  '${Assumptions.damodaranDate}).',
-            ),
-            section(
-              'Eugene Fama e Kenneth French (1993)',
-              'Empresas menores e mais baratas tendem a render mais no longo '
-                  'prazo. Os prêmios de tamanho (SMAL11 − BOVA11) e de valor '
-                  '(DIVO11 − BOVA11) são estimados com os dados e reduzidos à '
-                  'metade por cautela. No ranking de ações, valor = dividend '
-                  'yield e tamanho = valor de mercado.',
-            ),
-            section(
-              'Benjamin Graham (1949)',
-              'Em "O Investidor Inteligente", Graham só pagava até 15 vezes o '
-                  'lucro e 1,5 vez o patrimônio: preço justo = √(22,5 × LPA × '
-                  'VPA). Empresa com prejuízo fica de fora. Ele pedia ainda '
-                  '${_pct(Assumptions.marginOfSafety, digits: 0)} de desconto '
-                  '(margem de segurança) para comprar. No ranking de ações, o '
-                  'preço justo é a média de Graham e Gordon.',
-            ),
-            section(
-              'Myron Gordon e Eli Shapiro (1956)',
-              'Retorno = dividend yield × (1 + g) + g, com g = IPCA esperado '
-                  'de longo prazo (${_pct(macro.ipcaLongTerm / 100)}, Focus). '
-                  'Yields de referência: ações pagadoras '
-                  '${_pct(Assumptions.referenceDyDividends)} e FIIs '
-                  '${_pct(Assumptions.referenceDyReits)} (medianas, '
-                  '${Assumptions.referenceDyDate}).',
-            ),
-            section(
-              'Robert Metcalfe e Chris Burniske (2017)',
-              'O valor de uma rede cresce com o quadrado dos usuários. O '
-                  'valor do Bitcoin é comparado a k × (endereços ativos)², com '
-                  'k calibrado nos últimos 4 anos.',
-            ),
-            section(
-              'PlanB (2019), inspirado em Saifedean Ammous',
-              'Stock-to-flow mede a escassez (estoque ÷ emissão anual). '
-                  'Mostrado como curiosidade: as previsões do modelo falharam '
-                  'desde 2021.',
-            ),
-            const Divider(height: 24),
-            Text(
-              'Fontes: Banco Central (Selic, IPCA, Focus), Alpha Vantage '
-              '(ETFs, dólar, juros dos EUA), brapi (Ibovespa, valor de '
-              'mercado), Yahoo Finance (ações, proventos, lucro e patrimônio) e '
-              'CoinMetrics '
-              '(rede do Bitcoin). Conteúdo educativo, não é recomendação de '
-              'investimento (Resolução CVM 20/2021).',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
+/// Estimativas de cada classe e os autores do método, mostrados no "i" da
+/// carteira-alvo.
+List<InfoSection> _methodSections(PortfolioPlan plan, MacroSnapshot macro) => [
+      for (final e in plan.estimates)
+        InfoSection(
+          '${e.assetClass.label}: ${_pct(e.expectedReturn)} ao ano, '
+          'volatilidade ${_pct(e.volatility)}',
+          [
+            for (final v in e.views) '${v.model}: ${_pct(v.value)}',
+            if (e.beta != null)
+              'β contra o Ibovespa: ${e.beta!.toStringAsFixed(2).replaceAll('.', ',')}',
+          ].join(' • '),
         ),
+      const InfoSection(
+        'Harry Markowitz (1952)',
+        'Escolhe os pesos que maximizam retorno esperado − (γ/2) × '
+            'variância, considerando como as classes oscilam juntas '
+            '(covariâncias de até 5 anos de preços mensais). O γ vem das '
+            'suas respostas sobre troca de emprego (Arrow-Pratt).',
       ),
-    );
-  }
-}
+      InfoSection(
+        'John Burr Williams (1938) e Aswath Damodaran',
+        'O valor de um ativo é o valor presente dos fluxos futuros, '
+            'descontados pelo retorno exigido. Retorno exigido das ações '
+            '= Selic − spread de default do Brasil '
+            '(${_pct(Assumptions.brazilDefaultSpread, digits: 2)}) + β × '
+            'prêmio de risco do Brasil '
+            '(${_pct(Assumptions.brazilTotalErp, digits: 2)}, Damodaran, '
+            '${Assumptions.damodaranDate}).',
+      ),
+      const InfoSection(
+        'Eugene Fama e Kenneth French (1993)',
+        'Empresas menores e mais baratas tendem a render mais no longo '
+            'prazo. Os prêmios de tamanho (SMAL11 − BOVA11) e de valor '
+            '(DIVO11 − BOVA11) são estimados com os dados e reduzidos à '
+            'metade por cautela. No ranking de ações, valor = dividend '
+            'yield e tamanho = valor de mercado.',
+      ),
+      InfoSection(
+        'Benjamin Graham (1949)',
+        'Em "O Investidor Inteligente", Graham só pagava até 15 vezes o '
+            'lucro e 1,5 vez o patrimônio: preço justo = √(22,5 × LPA × '
+            'VPA). Empresa com prejuízo fica de fora. Ele pedia ainda '
+            '${_pct(Assumptions.marginOfSafety, digits: 0)} de desconto '
+            '(margem de segurança) para comprar. No ranking de ações, o '
+            'preço justo é a média de Graham e Gordon.',
+      ),
+      InfoSection(
+        'Myron Gordon e Eli Shapiro (1956)',
+        'Retorno = dividend yield × (1 + g) + g, com g = IPCA esperado '
+            'de longo prazo (${_pct(macro.ipcaLongTerm / 100)}, Focus). '
+            'Yields de referência: ações pagadoras '
+            '${_pct(Assumptions.referenceDyDividends)} e FIIs '
+            '${_pct(Assumptions.referenceDyReits)} (medianas, '
+            '${Assumptions.referenceDyDate}).',
+      ),
+      const InfoSection(
+        'Robert Metcalfe e Chris Burniske (2017)',
+        'O valor de uma rede cresce com o quadrado dos usuários. O '
+            'valor do Bitcoin é comparado a k × (endereços ativos)², com '
+            'k calibrado nos últimos 4 anos.',
+      ),
+      const InfoSection(
+        'PlanB (2019), inspirado em Saifedean Ammous',
+        'Stock-to-flow mede a escassez (estoque ÷ emissão anual). '
+            'Mostrado como curiosidade: as previsões do modelo falharam '
+            'desde 2021.',
+      ),
+    ];

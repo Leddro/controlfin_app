@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../services/community_report_service.dart';
 import '../widgets/app_header.dart';
+import '../widgets/info_button.dart';
 
 final _when = DateFormat("dd/MM/yyyy 'às' HH:mm", 'pt_BR');
 
@@ -162,14 +163,18 @@ class _CommunityReportsPageState extends State<CommunityReportsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Ajude a melhorar o ControlFin',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(
-            'Encontrou algo errado ou tem uma ideia? Conte aqui: a mensagem '
-            'vai direto para o desenvolvedor.',
-            style: theme.textTheme.bodySmall,
+          InfoTitle(
+            'Ajude a melhorar o ControlFin',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+            info: const InfoButton(
+              title: 'Problemas e sugestões',
+              text: 'Encontrou algo errado ou tem uma ideia? Conte aqui: a '
+                  'mensagem vai direto para o desenvolvedor.\n\n'
+                  'Seu nome e e-mail vão junto, para ele poder responder. Só '
+                  'ele vê o que você enviar. O andamento e a resposta '
+                  'aparecem em "Meus reports".',
+            ),
           ),
           const SizedBox(height: 14),
           SegmentedButton<ReportKind>(
@@ -206,9 +211,8 @@ class _CommunityReportsPageState extends State<CommunityReportsPage> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Seu nome e e-mail vão junto, para o desenvolvedor poder '
-                'responder. Só ele vê o que você enviar. Não coloque senhas '
-                'nem números de cartão.',
+                'Seu nome e e-mail vão junto. Não coloque senhas nem números '
+                'de cartão.',
                 style: theme.textTheme.bodySmall,
               ),
             ),

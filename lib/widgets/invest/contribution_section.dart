@@ -12,6 +12,7 @@ import '../../services/holdings_service.dart';
 import '../../services/market/market_sources.dart';
 import '../../services/settings_service.dart';
 import '../../services/tx_service.dart';
+import '../info_button.dart';
 import 'market_section.dart' show classColor;
 
 const _cardColor = Color(0xFF1A1A1A);
@@ -275,16 +276,26 @@ class FocusCard extends StatelessWidget {
     final reservePct = (reserveShareFor(reserve) * 100).round();
     final months = plan.monthsToReserve;
 
+    final title = building
+        ? 'Foco agora: montar sua reserva de emergência'
+        : 'Foco agora: fazer seu patrimônio crescer';
     return _Panel(
-      title: building
-          ? 'Foco agora: montar sua reserva de emergência'
-          : 'Foco agora: fazer seu patrimônio crescer',
-      subtitle: building
-          ? 'A maior parte do que você guardar vai para a reserva, e uma '
-              'parte já vai para a bolsa, para buscar mais que o CDI '
-              'enquanto ela se forma.'
-          : 'Sua reserva está completa. Tudo o que você guardar vai para os '
-              'investimentos, nas classes mais abaixo do alvo.',
+      title: title,
+      info: InfoButton(
+        key: const Key('info-focus'),
+        title: title,
+        text: building
+            ? 'A maior parte do que você guardar vai para a reserva, e uma '
+                'parte já vai para a bolsa, para buscar mais que o CDI '
+                'enquanto ela se forma.\n\n'
+                'Agora $reservePct% do que você guarda vai para a reserva. '
+                'Essa parte diminui conforme ela enche e, depois, tudo vai '
+                'para os investimentos.\n\n'
+                'Meta da reserva: ${_brl.format(reserve.monthlyBase)} por mês '
+                'de gastos essenciais (${reserve.baseSource}).'
+            : 'Sua reserva está completa. Tudo o que você guardar vai para '
+                'os investimentos, nas classes mais abaixo do alvo.',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -349,16 +360,11 @@ class FocusCard extends StatelessWidget {
           if (building) ...[
             Text(
               'Reserva: ${_brl.format(reserve.saved)} de '
-              '${_brl.format(reserve.target)}. Agora $reservePct% do que você '
-              'guarda vai para ela. Nesse ritmo fica pronta em cerca de '
-              '$months ${months == 1 ? 'mês' : 'meses'}; a parte da reserva '
-              'diminui conforme ela enche e, depois, tudo vai para os '
-              'investimentos.',
+              '${_brl.format(reserve.target)}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 4),
             Text(
-              'Meta da reserva: ${_brl.format(reserve.monthlyBase)} por mês de '
-              'gastos essenciais (${reserve.baseSource}).',
+              'Pronta em cerca de $months ${months == 1 ? 'mês' : 'meses'}',
               style: small,
             ),
           ],
@@ -526,7 +532,15 @@ class HoldingsCard extends StatelessWidget {
 
     return _Panel(
       title: 'Minha carteira',
-      subtitle: 'O que você já tem investido, fora a reserva de emergência.',
+      info: const InfoButton(
+        title: 'Minha carteira',
+        text: 'O que você já tem investido, fora a reserva de emergência. '
+            'Com ela, a divisão do salário compra primeiro as classes que '
+            'estão mais abaixo do alvo, sem vender nada.\n\n'
+            'Toque num investimento para editar a quantidade. Os preços vêm '
+            'das cotações do mercado; renda fixa usa o valor que você '
+            'informar.',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -818,14 +832,13 @@ class _HoldingDialogState extends State<_HoldingDialog> {
 
 class _Panel extends StatelessWidget {
   final String title;
-  final String? subtitle;
+  final InfoButton? info;
   final Widget child;
 
-  const _Panel({required this.title, this.subtitle, required this.child});
+  const _Panel({required this.title, this.info, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Material(
       color: _cardColor,
       shape: RoundedRectangleBorder(
@@ -837,13 +850,7 @@ class _Panel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            if (subtitle != null) ...[
-              const SizedBox(height: 2),
-              Text(subtitle!, style: theme.textTheme.bodySmall),
-            ],
+            InfoTitle(title, info: info),
             const SizedBox(height: 16),
             child,
           ],

@@ -160,12 +160,19 @@ void main() {
     expect(find.text('Capacidade de correr risco'), findsOneWidget);
     expect(find.textContaining('γ < 1'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('Base teórica'), 200);
-    await tester.tap(find.text('Base teórica'));
+    // Explicações e base teórica ficam no "i".
+    expect(find.text('Daniel Bernoulli (1738)'), findsNothing);
+    await tester.tap(find.byKey(const Key('info-profile')));
     await tester.pumpAndSettle();
     expect(find.text('Daniel Bernoulli (1738)'), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.text('Franco Modigliani e Richard Brumberg (1954)'), 200);
+      find.text('Franco Modigliani e Richard Brumberg (1954)'),
+      200,
+      scrollable: find.descendant(
+          of: find.byType(BottomSheet), matching: find.byType(Scrollable)),
+    );
+    Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+    await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(find.text('Refazer perfil'), 300);
     await tester.tap(find.text('Refazer perfil'));
